@@ -15,7 +15,7 @@ import (
 
 	"github.com/hashicorp/go-set/v3"
 
-	"github.com/git-hulk/langfuse-go/pkg/common"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/common"
 
 	"github.com/go-resty/resty/v2"
 )

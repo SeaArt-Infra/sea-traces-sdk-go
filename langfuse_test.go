@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/git-hulk/langfuse-go/pkg/traces"
 	"github.com/stretchr/testify/require"
+
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/traces"
 )
 
 func TestNewClient_WithoutOptions(t *testing.T) {

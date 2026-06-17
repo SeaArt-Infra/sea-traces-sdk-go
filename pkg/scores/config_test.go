@@ -10,7 +10,7 @@ import (
 	"github.com/go-resty/resty/v2"
 	"github.com/stretchr/testify/require"
 
-	"github.com/git-hulk/langfuse-go/pkg/common"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/common"
 )
 
 func TestCreateScoreConfigRequest_validate(t *testing.T) {

@@ -22,20 +22,20 @@ import (
 
 	"github.com/go-resty/resty/v2"
 
-	"github.com/git-hulk/langfuse-go/pkg/organizations"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/organizations"
 
-	"github.com/git-hulk/langfuse-go/pkg/comments"
-	"github.com/git-hulk/langfuse-go/pkg/datasets"
-	"github.com/git-hulk/langfuse-go/pkg/health"
-	"github.com/git-hulk/langfuse-go/pkg/llmconnections"
-	"github.com/git-hulk/langfuse-go/pkg/media"
-	"github.com/git-hulk/langfuse-go/pkg/metrics"
-	"github.com/git-hulk/langfuse-go/pkg/models"
-	"github.com/git-hulk/langfuse-go/pkg/projects"
-	"github.com/git-hulk/langfuse-go/pkg/prompts"
-	"github.com/git-hulk/langfuse-go/pkg/scores"
-	"github.com/git-hulk/langfuse-go/pkg/sessions"
-	"github.com/git-hulk/langfuse-go/pkg/traces"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/comments"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/datasets"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/health"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/llmconnections"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/media"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/metrics"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/models"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/projects"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/prompts"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/scores"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/sessions"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/traces"
 )
 
 // Langfuse is the main client for interacting with the Langfuse platform.

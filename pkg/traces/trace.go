@@ -10,7 +10,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/git-hulk/langfuse-go/pkg/logger"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/logger"
 )
 
 // TraceEntry represents the core data structure for a trace in Langfuse.

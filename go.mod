@@ -1,4 +1,4 @@
-module github.com/git-hulk/langfuse-go
+module gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git
 
 go 1.23
 

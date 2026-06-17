@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/git-hulk/langfuse-go/pkg/common"
-	"github.com/git-hulk/langfuse-go/pkg/traces"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/common"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/traces"
 
 	"github.com/go-resty/resty/v2"
 )

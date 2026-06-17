@@ -1,4 +1,4 @@
-# langfuse-go ![GitHub CI](https://github.com/git-hulk/langfuse-go/actions/workflows/ci.yaml/badge.svg) [![Go Report Card](https://goreportcard.com/badge/github.com/git-hulk/langfuse-go)](https://goreportcard.com/report/github.com/git-hulk/langfuse-go) [![LICENSE](https://img.shields.io/github/license/git-hulk/langfuse-go.svg)](https://github.com/git-hulk/langfuse-go/blob/master/LICENSE) [![GoDoc](https://img.shields.io/badge/Godoc-reference-blue.svg)](https://godoc.org/github.com/git-hulk/langfuse-go) 
+# langfuse-go
 
 Go client & SDK for interacting with [Langfuse](https://langfuse.com/). Provides comprehensive support for observability tracing, prompt management, model configuration, datasets, sessions, scores, projects, LLM connections, and organization management with efficient batch processing.
 
@@ -38,7 +38,7 @@ Core functionality for tracking and monitoring your AI applications with distrib
 import (
     "context"
 
-    langfuse "github.com/git-hulk/langfuse-go"
+    langfuse "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git"
 )
 
 func main() {
@@ -60,8 +60,8 @@ import (
     "context"
     "time"
 
-    langfuse "github.com/git-hulk/langfuse-go"
-    "github.com/git-hulk/langfuse-go/pkg/sessions"
+    langfuse "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git"
+    "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/sessions"
 )
 
 func main() {
@@ -92,8 +92,8 @@ import (
     "fmt"
     "time"
 
-    langfuse "github.com/git-hulk/langfuse-go"
-    "github.com/git-hulk/langfuse-go/pkg/metrics"
+    langfuse "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git"
+    "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/metrics"
 )
 
 func main() {
@@ -150,8 +150,8 @@ func main() {
 import (
     "context"
 
-    langfuse "github.com/git-hulk/langfuse-go"
-    "github.com/git-hulk/langfuse-go/pkg/comments"
+    langfuse "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git"
+    "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/comments"
 )
 
 func main() {
@@ -189,8 +189,8 @@ Tools for managing prompts, models, evaluation scores, and LLM provider connecti
 import (
     "context"
 
-    langfuse "github.com/git-hulk/langfuse-go"
-    "github.com/git-hulk/langfuse-go/pkg/prompts"
+    langfuse "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git"
+    "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/prompts"
 )
 
 func main() {
@@ -238,8 +238,8 @@ func main() {
 import (
     "context"
 
-    langfuse "github.com/git-hulk/langfuse-go"
-    "github.com/git-hulk/langfuse-go/pkg/models"
+    langfuse "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git"
+    "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/models"
 )
 
 func main() {
@@ -276,8 +276,8 @@ func main() {
 import (
     "context"
 
-    langfuse "github.com/git-hulk/langfuse-go"
-    "github.com/git-hulk/langfuse-go/pkg/scores"
+    langfuse "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git"
+    "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/scores"
 )
 
 func main() {
@@ -316,8 +316,8 @@ func main() {
 import (
     "context"
 
-    langfuse "github.com/git-hulk/langfuse-go"
-    "github.com/git-hulk/langfuse-go/pkg/llmconnections"
+    langfuse "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git"
+    "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/llmconnections"
 )
 
 func main() {
@@ -353,8 +353,8 @@ Manage datasets for training, evaluation, and testing of your AI models.
 import (
     "context"
 
-    langfuse "github.com/git-hulk/langfuse-go"
-    "github.com/git-hulk/langfuse-go/pkg/datasets"
+    langfuse "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git"
+    "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/datasets"
 )
 
 func main() {
@@ -391,8 +391,8 @@ import (
     "context"
     "os"
 
-    langfuse "github.com/git-hulk/langfuse-go"
-    "github.com/git-hulk/langfuse-go/pkg/media"
+    langfuse "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git"
+    "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/media"
 )
 
 func main() {
@@ -438,7 +438,7 @@ import (
     "context"
     "fmt"
 
-    langfuse "github.com/git-hulk/langfuse-go"
+    langfuse "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git"
 )
 
 func main() {
@@ -467,8 +467,8 @@ Manage projects, API keys, and organization memberships. Most operations require
 import (
     "context"
 
-    langfuse "github.com/git-hulk/langfuse-go"
-    "github.com/git-hulk/langfuse-go/pkg/projects"
+    langfuse "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git"
+    "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/projects"
 )
 
 func main() {
@@ -521,7 +521,7 @@ go test -v ./pkg/traces/    # Verbose output for specific package
 
 ```bash
 make format                 # Format with goimports + gofmt (includes local import ordering)
-goimports -w -local github.com/git-hulk/langfuse-go ./...
+goimports -w -local gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git ./...
 ```
 
 ### Build & Linting

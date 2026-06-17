@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/git-hulk/langfuse-go/pkg/common"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/common"
 )
 
 // DatasetItem represents an individual item within a dataset.
