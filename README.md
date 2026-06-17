@@ -1,93 +1,540 @@
-# sealangfus-sdk-go
+# langfuse-go ![GitHub CI](https://github.com/git-hulk/langfuse-go/actions/workflows/ci.yaml/badge.svg) [![Go Report Card](https://goreportcard.com/badge/github.com/git-hulk/langfuse-go)](https://goreportcard.com/report/github.com/git-hulk/langfuse-go) [![LICENSE](https://img.shields.io/github/license/git-hulk/langfuse-go.svg)](https://github.com/git-hulk/langfuse-go/blob/master/LICENSE) [![GoDoc](https://img.shields.io/badge/Godoc-reference-blue.svg)](https://godoc.org/github.com/git-hulk/langfuse-go) 
 
+Go client & SDK for interacting with [Langfuse](https://langfuse.com/). Provides comprehensive support for observability tracing, prompt management, model configuration, datasets, sessions, scores, projects, LLM connections, and organization management with efficient batch processing.
 
+## Table of Contents
 
-## Getting started
+- [API Reference](#api-reference)
+  - [Core Observability](#core-observability)
+    - [Tracing](#tracing)
+    - [Sessions](#sessions)
+    - [Metrics](#metrics)
+    - [Comments](#comments)
+  - [Platform APIs](#platform-apis)
+    - [Media](#media)
+    - [Health](#health)
+  - [AI/ML Management](#aiml-management)
+    - [Prompts](#prompts)
+    - [Models](#models)
+    - [Scores](#scores)
+    - [LLM Connections](#llm-connections)
+  - [Data Management](#data-management)
+    - [Datasets](#datasets)
+  - [Organization & Projects](#organization--projects)
+    - [Projects](#projects)
+- [Development](#development)
+- [Contributing](#contributing)
+- [License](#license)
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## API Reference
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+## Core Observability
 
-## Add your files
+Core functionality for tracking and monitoring your AI applications with distributed tracing, session management, metrics queries, and contextual comments.
 
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+### Tracing
 
+```go
+import (
+    "context"
+
+    langfuse "github.com/git-hulk/langfuse-go"
+)
+
+func main() {
+    langfuse := langfuse.NewClient("YOUR_HOST", "YOUR_PUBLIC_KEY", "YOUR_PRIVATE_KEY")
+
+    ctx := context.Background()
+    trace := langfuse.StartTrace(ctx, "it's a trace")
+    span := trace.StartSpan("it's a span")
+    span.End()
+    trace.End()
+    langfuse.Close() // flushes all pending traces
+}
 ```
-cd existing_repo
-git remote add origin https://gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git
-git branch -M main
-git push -uf origin main
+
+### Sessions
+
+```go
+import (
+    "context"
+    "time"
+
+    langfuse "github.com/git-hulk/langfuse-go"
+    "github.com/git-hulk/langfuse-go/pkg/sessions"
+)
+
+func main() {
+    langfuse := langfuse.NewClient("YOUR_HOST", "YOUR_PUBLIC_KEY", "YOUR_PRIVATE_KEY")
+
+    ctx := context.Background()
+
+    // Get a session by ID with its traces
+    session, err := langfuse.Sessions().Get(ctx, "session-123")
+
+    // List sessions with filters
+    sessionsList, err := langfuse.Sessions().List(ctx, sessions.ListParams{
+        Page:          1,
+        Limit:         10,
+        FromTimestamp: time.Now().Add(-24 * time.Hour),
+        ToTimestamp:   time.Now(),
+        Environment:   []string{"production"},
+    })
+}
 ```
 
-## Integrate with your tools
+### Metrics
 
-- [ ] [Set up project integrations](https://gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go/-/settings/integrations)
+```go
+import (
+    "context"
+    "encoding/json"
+    "fmt"
+    "time"
 
-## Collaborate with your team
+    langfuse "github.com/git-hulk/langfuse-go"
+    "github.com/git-hulk/langfuse-go/pkg/metrics"
+)
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+func main() {
+    langfuse := langfuse.NewClient("YOUR_HOST", "YOUR_PUBLIC_KEY", "YOUR_PRIVATE_KEY")
 
-## Test and Deploy
+    ctx := context.Background()
 
-Use the built-in continuous integration in GitLab.
+    metricsResponse, err := langfuse.Metrics().Get(ctx, &metrics.Query{
+        View: metrics.ViewTraces,
+        Metrics: []metrics.Metric{
+            {Measure: metrics.MeasureCount, Aggregation: "count"},
+        },
+        Dimensions: []metrics.Dimension{
+            {Field: "name"},
+        },
+        FromTimestamp: time.Now().Add(-24 * time.Hour),
+        ToTimestamp:   time.Now(),
+        OrderBy: []metrics.OrderBy{
+            {Field: "count_count", Direction: metrics.OrderDirectionDesc},
+        },
+    })
+    if err != nil {
+        panic(err)
+    }
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+    type TraceMetricRow struct {
+        Name  string `json:"name"`
+        Count string `json:"count_count"`
+    }
 
-***
+    rows, err := metrics.DecodeRows[TraceMetricRow](metricsResponse.Data)
+    if err != nil {
+        panic(err)
+    }
 
-# Editing this README
+    rawName, ok := metricsResponse.Data[0].Raw("name")
+    if !ok {
+        panic("name field not found")
+    }
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+    var name string
+    err = json.Unmarshal(rawName, &name)
+    if err != nil {
+        panic(err)
+    }
 
-## Suggestions for a good README
+    fmt.Println(name, rows[0].Name, rows[0].Count)
+}
+```
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+### Comments
 
-## Name
-Choose a self-explaining name for your project.
+```go
+import (
+    "context"
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+    langfuse "github.com/git-hulk/langfuse-go"
+    "github.com/git-hulk/langfuse-go/pkg/comments"
+)
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+func main() {
+    langfuse := langfuse.NewClient("YOUR_HOST", "YOUR_PUBLIC_KEY", "YOUR_PRIVATE_KEY")
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+    ctx := context.Background()
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+    // Create a comment on a trace
+    createdComment, err := langfuse.Comments().Create(ctx, &comments.CreateCommentRequest{
+        ObjectType: comments.ObjectTypeTrace,
+        ObjectID:   "trace-123",
+        Content:    "This trace looks good!",
+    })
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+    // Get a comment by ID
+    comment, err := langfuse.Comments().Get(ctx, "comment-id")
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+    // List comments with filters
+    commentsList, err := langfuse.Comments().List(ctx, comments.ListParams{
+        ObjectType: comments.ObjectTypeTrace,
+        ObjectID:   "trace-123",
+        Page:       1,
+        Limit:      10,
+    })
+}
+```
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+## AI/ML Management
+
+Tools for managing prompts, models, evaluation scores, and LLM provider connections for your AI applications.
+
+### Prompts
+
+```go
+import (
+    "context"
+
+    langfuse "github.com/git-hulk/langfuse-go"
+    "github.com/git-hulk/langfuse-go/pkg/prompts"
+)
+
+func main() {
+    langfuse := langfuse.NewClient("YOUR_HOST", "YOUR_PUBLIC_KEY", "YOUR_PRIVATE_KEY")
+
+    ctx := context.Background()
+
+    createdPrompt, err := langfuse.Prompts().Create(ctx, prompts.PromptEntry{
+        Name: "welcome-message",
+        Prompt: []prompts.ChatMessageWithPlaceHolder {
+            {Role: "system", Content: "You are a helpful assistant."},
+            {Role: "user", Content: "Hello!"},
+        }
+	})
+
+    prompt, err := langfuse.Prompts().Get(ctx, prompts.GetParams{Name: "welcome-message"})
+
+    listResponse, err := langfuse.Prompts().List(ctx, prompts.ListParams{Limit: 20})
+
+    // Compile a text prompt
+    textPrompt, err := langfuse.Prompts().Get(ctx, prompts.GetParams{
+        Name: "welcome-message-text",
+        Label: "latest",
+        Version: 1,
+    })
+    compiledText, err := textPrompt.Compile(map[string]any{
+        "name": "Alice",
+    })
+    renderedText := compiledText.(string)
+
+    // Compile a chat prompt with placeholders
+    compiledChat, err := prompt.Compile(map[string]any{
+        "user": "Bob",
+        "examples": []prompts.ChatMessageWithPlaceHolder{
+            {Role: "user", Content: "Hello {{ user }}"},
+        },
+    })
+    chatMessages := compiledChat.([]prompts.ChatMessageWithPlaceHolder)
+}
+```
+
+### Models
+
+```go
+import (
+    "context"
+
+    langfuse "github.com/git-hulk/langfuse-go"
+    "github.com/git-hulk/langfuse-go/pkg/models"
+)
+
+func main() {
+    langfuse := langfuse.NewClient("YOUR_HOST", "YOUR_PUBLIC_KEY", "YOUR_PRIVATE_KEY")
+
+    ctx := context.Background()
+
+    // Create a new model
+    createdModel, err := langfuse.Models().Create(ctx, &models.ModelEntry{
+        ModelName:    "gpt-4",
+        MatchPattern: "gpt-4*",
+        InputPrice:   0.03,
+        OutputPrice:  0.06,
+        Unit:         "TOKENS",
+    })
+
+    // Get a model by ID
+    model, err := langfuse.Models().Get(ctx, "model-id")
+
+    // List models
+    listModels, err := langfuse.Models().List(ctx, models.ListParams{
+        Page:  1,
+        Limit: 20,
+    })
+
+    // Delete a model
+    err = langfuse.Models().Delete(ctx, "model-id")
+}
+```
+
+### Scores
+
+```go
+import (
+    "context"
+
+    langfuse "github.com/git-hulk/langfuse-go"
+    "github.com/git-hulk/langfuse-go/pkg/scores"
+)
+
+func main() {
+    langfuse := langfuse.NewClient("YOUR_HOST", "YOUR_PUBLIC_KEY", "YOUR_PRIVATE_KEY")
+
+    ctx := context.Background()
+
+    // Create a score for a trace
+    createdScore, err := langfuse.Scores().Create(ctx, &scores.CreateScoreRequest{
+        TraceID:  "trace-123",
+        Name:     "accuracy",
+        Value:    0.95,
+        DataType: scores.ScoreDataTypeNumeric,
+        Comment:  "High accuracy score",
+    })
+
+    // Get a score by ID
+    score, err := langfuse.Scores().Get(ctx, "score-id")
+
+    // List scores with filters
+    scoresList, err := langfuse.Scores().List(ctx, scores.ListParams{
+        Page:   1,
+        Limit:  20,
+        Name:   "accuracy",
+        Source: scores.ScoreSourceAPI,
+    })
+
+    // Delete a score
+    err = langfuse.Scores().Delete(ctx, "score-id")
+}
+```
+
+### LLM Connections
+
+```go
+import (
+    "context"
+
+    langfuse "github.com/git-hulk/langfuse-go"
+    "github.com/git-hulk/langfuse-go/pkg/llmconnections"
+)
+
+func main() {
+    langfuse := langfuse.NewClient("YOUR_HOST", "YOUR_PUBLIC_KEY", "YOUR_PRIVATE_KEY")
+
+    ctx := context.Background()
+
+    // List LLM connections
+    connections, err := langfuse.LLMConnections().List(ctx, llmconnections.ListParams{
+        Page:  1,
+        Limit: 10,
+    })
+
+    // Create or update an LLM connection
+    connection, err := langfuse.LLMConnections().Upsert(ctx, &llmconnections.UpsertLLMConnectionRequest{
+        Provider:          "OpenAI",
+        Adapter:           llmconnections.AdapterOpenAI,
+        SecretKey:         "sk-your-openai-key",
+        CustomModels:      []string{"gpt-4", "gpt-3.5-turbo"},
+        WithDefaultModels: &[]bool{true}[0],
+        ExtraHeaders:      map[string]string{"Custom-Header": "value"},
+    })
+}
+```
+
+## Data Management
+
+Manage datasets for training, evaluation, and testing of your AI models.
+
+### Datasets
+
+```go
+import (
+    "context"
+
+    langfuse "github.com/git-hulk/langfuse-go"
+    "github.com/git-hulk/langfuse-go/pkg/datasets"
+)
+
+func main() {
+    langfuse := langfuse.NewClient("YOUR_HOST", "YOUR_PUBLIC_KEY", "YOUR_PRIVATE_KEY")
+
+    ctx := context.Background()
+
+    // Create a new dataset
+    createdDataset, err := langfuse.Datasets().Create(ctx, &datasets.CreateDatasetRequest{
+        Name:        "evaluation-dataset",
+        Description: "Dataset for model evaluation",
+        Metadata:    map[string]interface{}{"version": "1.0"},
+    })
+
+    // Get a dataset by name
+    dataset, err := langfuse.Datasets().Get(ctx, "evaluation-dataset")
+
+    // List datasets
+    listDatasets, err := langfuse.Datasets().List(ctx, datasets.ListParams{
+        Page:  1,
+        Limit: 20,
+    })
+}
+```
+
+## Platform APIs
+
+Utility APIs for media file management and platform health monitoring.
+
+### Media
+
+```go
+import (
+    "context"
+    "os"
+
+    langfuse "github.com/git-hulk/langfuse-go"
+    "github.com/git-hulk/langfuse-go/pkg/media"
+)
+
+func main() {
+    langfuse := langfuse.NewClient("YOUR_HOST", "YOUR_PUBLIC_KEY", "YOUR_PRIVATE_KEY")
+
+    ctx := context.Background()
+
+    // Upload a file from filesystem
+    uploadResp, err := langfuse.Media().UploadFile(ctx, &media.UploadFileRequest{
+        TraceID:     "trace-123",
+        Field:       "input",
+        FilePath:    "./image.png",
+        ContentType: media.ContentTypeImagePNG, // Optional, auto-detected if not provided
+    })
+
+    // Upload from byte data
+    imageData, _ := os.ReadFile("./image.jpg")
+    uploadResp, err = langfuse.Media().UploadFromBytes(ctx, &media.UploadFromBytesRequest{
+        TraceID:     "trace-123",
+        Field:       "output",
+        ContentType: media.ContentTypeImageJPEG,
+        Data:        imageData,
+    })
+
+    // Get media record
+    mediaRecord, err := langfuse.Media().Get(ctx, uploadResp.MediaID)
+
+    // Get presigned upload URL for custom upload flow
+    uploadURL, err := langfuse.Media().GetUploadURL(ctx, &media.GetUploadURLRequest{
+        TraceID:       "trace-123",
+        ContentType:   media.ContentTypeImagePNG,
+        ContentLength: len(imageData),
+        SHA256Hash:    "base64-encoded-sha256-hash",
+        Field:         "metadata",
+    })
+}
+```
+
+### Health
+
+```go
+import (
+    "context"
+    "fmt"
+
+    langfuse "github.com/git-hulk/langfuse-go"
+)
+
+func main() {
+    langfuse := langfuse.NewClient("YOUR_HOST", "YOUR_PUBLIC_KEY", "YOUR_PRIVATE_KEY")
+
+    ctx := context.Background()
+
+    // Check API health and version
+    health, err := langfuse.Health().Check(ctx)
+    if err != nil {
+        fmt.Printf("Health check failed: %v\n", err)
+        return
+    }
+    
+    fmt.Printf("Status: %s, Version: %s\n", health.Status, health.Version)
+}
+```
+
+## Organization & Projects
+
+Manage projects, API keys, and organization memberships. Most operations require organization-scoped API keys.
+
+### Projects
+
+```go
+import (
+    "context"
+
+    langfuse "github.com/git-hulk/langfuse-go"
+    "github.com/git-hulk/langfuse-go/pkg/projects"
+)
+
+func main() {
+    langfuse := langfuse.NewClient("YOUR_HOST", "YOUR_PUBLIC_KEY", "YOUR_PRIVATE_KEY")
+
+    ctx := context.Background()
+
+    // Get projects associated with your API key
+    projects, err := langfuse.Projects().Get(ctx)
+
+    // Create a new project (requires organization-scoped API key)
+    createdProject, err := langfuse.Projects().Create(ctx, &projects.CreateProjectRequest{
+        Name:      "my-new-project",
+        Metadata:  map[string]interface{}{"team": "ai"},
+        Retention: 30,
+    })
+
+    // Update a project (requires organization-scoped API key)
+    updatedProject, err := langfuse.Projects().Update(ctx, "project-id", &projects.UpdateProjectRequest{
+        Name:      "updated-project-name",
+        Retention: 60,
+    })
+
+    // Delete a project (requires organization-scoped API key)
+    deleteResponse, err := langfuse.Projects().Delete(ctx, "project-id")
+
+    // Manage API keys for a project (requires organization-scoped API key)
+    apiKeys, err := langfuse.Projects().GetAPIKeys(ctx, "project-id")
+    
+    newAPIKey, err := langfuse.Projects().CreateAPIKey(ctx, "project-id", &projects.CreateAPIKeyRequest{
+        Note: &[]string{"API key for production"}[0],
+    })
+    
+    deleteAPIResponse, err := langfuse.Projects().DeleteAPIKey(ctx, "project-id", "api-key-id")
+}
+```
+
+## Development
+
+### Testing
+
+```bash
+make test                    # Run all tests with race detector (-race -count=1)
+go test ./...               # Standard Go test runner  
+go test ./pkg/datasets/     # Test specific package
+go test -v ./pkg/traces/    # Verbose output for specific package
+```
+
+### Code Formatting
+
+```bash
+make format                 # Format with goimports + gofmt (includes local import ordering)
+goimports -w -local github.com/git-hulk/langfuse-go ./...
+```
+
+### Build & Linting
+
+```bash
+go build ./...              # Build all packages
+golangci-lint run           # Lint (CI uses v1.64.7)
+```
 
 ## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+Issues & PRs are welcome. Please include tests for new functionality or bug fixes.
 
 ## License
-For open source projects, say how it is licensed.
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+MIT License. See [LICENSE](LICENSE).
