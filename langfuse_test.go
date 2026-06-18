@@ -2,7 +2,12 @@ package langfuse
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"net/http"
+	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -98,6 +103,153 @@ func TestWithHTTPClient(t *testing.T) {
 func TestClientConfig_Default(t *testing.T) {
 	config := &clientConfig{}
 	require.Nil(t, config.httpClient)
+}
+
+func TestNewClientWithAPIKey(t *testing.T) {
+	clearSealangfuseCredentialsCacheForTest()
+
+	var resolverCalls int32
+	var healthAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/public/sea-project-api-credentials":
+			atomic.AddInt32(&resolverCalls, 1)
+			require.Equal(t, "sa-test", r.URL.Query().Get("key"))
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"publicKey": "pk-lf-resolved",
+				"secretKey": "sk-lf-resolved",
+				"baseUrl":   "https://resolver-response.example.com",
+				"status":    "ACTIVE",
+			})
+		case "/api/public/health":
+			healthAuth = r.Header.Get("Authorization")
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"version": "test",
+				"status":  "OK",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClientWithAPIKey(context.Background(), server.URL, "sa-test")
+	require.NoError(t, err)
+	require.NotNil(t, client)
+
+	health, err := client.Health().Check(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "OK", health.Status)
+	require.Equal(t, int32(1), atomic.LoadInt32(&resolverCalls))
+	require.Equal(t, "Basic "+base64.StdEncoding.EncodeToString([]byte("pk-lf-resolved:sk-lf-resolved")), healthAuth)
+}
+
+func TestNewClientWithAPIKey_UsesCredentialsURLOverride(t *testing.T) {
+	clearSealangfuseCredentialsCacheForTest()
+
+	resolver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/credentials", r.URL.Path)
+		require.Equal(t, "sa-test", r.URL.Query().Get("key"))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"publicKey": "pk-lf-override",
+			"secretKey": "sk-lf-override",
+			"baseUrl":   "https://resolver-response.example.com",
+			"status":    "ACTIVE",
+		})
+	}))
+	defer resolver.Close()
+
+	client, err := NewClientWithAPIKey(
+		context.Background(),
+		"https://langfuse.example.com",
+		"sa-test",
+		WithCredentialsURL(resolver.URL+"/credentials"),
+	)
+	require.NoError(t, err)
+	require.NotNil(t, client)
+	require.Equal(t, "https://langfuse.example.com/api/public", client.restyCli.BaseURL)
+}
+
+func TestNewClientWithAPIKey_InactiveCredentials(t *testing.T) {
+	clearSealangfuseCredentialsCacheForTest()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"publicKey": "pk-lf-resolved",
+			"secretKey": "sk-lf-resolved",
+			"baseUrl":   "https://resolver-response.example.com",
+			"status":    "INACTIVE",
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewClientWithAPIKey(context.Background(), server.URL, "sa-test")
+	require.Error(t, err)
+	require.Nil(t, client)
+}
+
+func TestNewClientWithAPIKey_DeduplicatesConcurrentResolution(t *testing.T) {
+	clearSealangfuseCredentialsCacheForTest()
+
+	var resolverCalls int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&resolverCalls, 1)
+		time.Sleep(50 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"publicKey": "pk-lf-resolved",
+			"secretKey": "sk-lf-resolved",
+			"baseUrl":   "https://resolver-response.example.com",
+			"status":    "ACTIVE",
+		})
+	}))
+	defer server.Close()
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 10)
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := NewClientWithAPIKey(context.Background(), server.URL, "sa-test")
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		require.NoError(t, err)
+	}
+	require.Equal(t, int32(1), atomic.LoadInt32(&resolverCalls))
+}
+
+func TestNewClientFromEnv(t *testing.T) {
+	clearSealangfuseCredentialsCacheForTest()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/api/public/sea-project-api-credentials", r.URL.Path)
+		require.Equal(t, "sa-env", r.URL.Query().Get("key"))
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"publicKey": "pk-lf-env",
+			"secretKey": "sk-lf-env",
+			"baseUrl":   "https://resolver-response.example.com",
+			"status":    "ACTIVE",
+		})
+	}))
+	defer server.Close()
+
+	t.Setenv("SEALANGFUSE_API_KEY", "sa-env")
+	t.Setenv("LANGFUSE_BASE_URL", server.URL)
+
+	client, err := NewClientFromEnv(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, client)
 }
 
 func TestTrace(t *testing.T) {

@@ -68,7 +68,8 @@ type ClientOption func(*clientConfig)
 
 // clientConfig holds configuration options for the Langfuse client.
 type clientConfig struct {
-	httpClient *http.Client
+	httpClient     *http.Client
+	credentialsURL string
 }
 
 // WithHTTPClient sets a custom HTTP client for the Langfuse client.
@@ -92,6 +93,17 @@ func WithHTTPClient(httpClient *http.Client) ClientOption {
 	}
 }
 
+// WithCredentialsURL overrides the Sealangfuse credential resolver endpoint.
+//
+// By default, NewClientWithAPIKey resolves credentials from:
+//
+//	{host}/api/public/sea-project-api-credentials
+func WithCredentialsURL(credentialsURL string) ClientOption {
+	return func(config *clientConfig) {
+		config.credentialsURL = credentialsURL
+	}
+}
+
 // NewClient creates a new Langfuse client instance with the specified host and credentials.
 //
 // The host should be the base URL of your Langfuse instance (e.g., "https://cloud.langfuse.com").
@@ -106,6 +118,48 @@ func WithHTTPClient(httpClient *http.Client) ClientOption {
 //	httpClient := &http.Client{Timeout: 30 * time.Second}
 //	client := langfuse.NewClient("https://cloud.langfuse.com", "public-key", "secret-key", langfuse.WithHTTPClient(httpClient))
 func NewClient(host string, publicKey string, secretKey string, options ...ClientOption) *Langfuse {
+	return newClientWithCredentials(host, publicKey, secretKey, options...)
+}
+
+// NewClientWithAPIKey creates a new Langfuse client by resolving project credentials
+// from a Sealangfuse API key.
+//
+// The host is the final Langfuse base URL used for ingestion and API requests.
+// The resolver response baseUrl is validated but does not override host.
+func NewClientWithAPIKey(ctx context.Context, host string, apiKey string, options ...ClientOption) (*Langfuse, error) {
+	config := &clientConfig{}
+	for _, option := range options {
+		option(config)
+	}
+
+	credentials, err := resolveSealangfuseCredentials(ctx, resolveSealangfuseCredentialsParams{
+		apiKey:         apiKey,
+		baseURL:        host,
+		credentialsURL: config.credentialsURL,
+		httpClient:     config.httpClient,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return newClientWithCredentials(host, credentials.PublicKey, credentials.SecretKey, options...), nil
+}
+
+// NewClientFromEnv creates a new Langfuse client from SEALANGFUSE_API_KEY and LANGFUSE_BASE_URL.
+func NewClientFromEnv(ctx context.Context, options ...ClientOption) (*Langfuse, error) {
+	host := getLangfuseBaseURLEnv()
+	apiKey := getSealangfuseAPIKeyEnv()
+	if host == "" {
+		return nil, errMissingBaseURL
+	}
+	if apiKey == "" {
+		return nil, errMissingAPIKey
+	}
+
+	return NewClientWithAPIKey(ctx, host, apiKey, options...)
+}
+
+func newClientWithCredentials(host string, publicKey string, secretKey string, options ...ClientOption) *Langfuse {
 	config := &clientConfig{}
 	for _, option := range options {
 		option(config)
