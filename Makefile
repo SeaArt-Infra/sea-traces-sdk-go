@@ -14,6 +14,6 @@ test:
 ## Format code using gofmt
 format:
 	@echo '==> Running goimports'
-	@$(GOIMPORTS) -w -local gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git $(GO_FILES)
+	@$(GOIMPORTS) -w -local gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git $(GO_FILES)
 	@echo '==> Formatting Go files'
 	@gofmt -l -w $(GO_FILES)

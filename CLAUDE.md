@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is the **langfuse-go** client library for interacting with the Langfuse platform. It provides Go bindings for tracing, prompt management, model management, scores, datasets, sessions, LLM connections, organizations, comments, and annotations functionality.
+This is the **sea-traces-go** client library for interacting with the Langfuse platform. It provides Go bindings for tracing, prompt management, model management, scores, datasets, sessions, LLM connections, organizations, comments, and annotations functionality.
 
 ## Key Architecture
 
@@ -57,7 +57,7 @@ go run integration/integration.go  # Run integration tests (requires env setup)
 ### Code Formatting
 ```bash
 make format                 # Format with goimports + gofmt (includes local import ordering)
-goimports -w -local gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git ./...
+goimports -w -local gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git ./...
 ```
 
 ### Build & Linting

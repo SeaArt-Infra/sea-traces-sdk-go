@@ -11,9 +11,9 @@ import (
 	"github.com/go-resty/resty/v2"
 	"github.com/stretchr/testify/require"
 
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/traces"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/traces"
 
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/common"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/common"
 )
 
 func TestListParams_ToQueryString(t *testing.T) {

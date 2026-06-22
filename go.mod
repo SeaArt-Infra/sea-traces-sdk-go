@@ -1,4 +1,4 @@
-module gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git
+module gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git
 
 go 1.23
 

@@ -1,5 +1,5 @@
 // Package logger provides a global zap logger instance for JSON formatted logging
-// across the entire langfuse-go project.
+// across the entire sea-traces-go project.
 package logger
 
 import (

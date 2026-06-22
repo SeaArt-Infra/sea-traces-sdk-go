@@ -10,20 +10,18 @@ import (
 
 	"github.com/gofrs/uuid/v5"
 
-	langfuse "gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/annotations"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/comments"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/datasets"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/llmconnections"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/media"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/models"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/organizations"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/projects"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/prompts"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/scores"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/traces"
-
-	"github.com/go-resty/resty/v2"
+	langfuse "gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/annotations"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/comments"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/datasets"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/llmconnections"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/media"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/models"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/organizations"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/projects"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/prompts"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/scores"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/traces"
 )
 
 // ANSI color codes
@@ -1251,21 +1249,8 @@ func runMediaTests(client *langfuse.Langfuse) {
 func runAnnotationTests(client *langfuse.Langfuse) {
 	ctx := context.Background()
 
-	// Create annotation clients directly since they're not exposed through the main client
-	langfuseHost := os.Getenv("LANGFUSE_HOST")
-	langfusePubKey := os.Getenv("LANGFUSE_PUBLIC_KEY")
-	langfuseSecret := os.Getenv("LANGFUSE_SECRET_KEY")
-	if langfuseHost == "" || langfusePubKey == "" || langfuseSecret == "" {
-		fmt.Println("LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY, or LANGFUSE_SECRET_KEY environment variable is not set. Skipping annotation tests.")
-		return
-	}
-
-	restyCli := resty.New().
-		SetBaseURL(langfuseHost+"/api/public").
-		SetBasicAuth(langfusePubKey, langfuseSecret)
-
-	queueClient := annotations.NewQueueClient(restyCli)
-	itemClient := annotations.NewItemClient(restyCli)
+	queueClient := client.AnnotationQueues()
+	itemClient := client.AnnotationItems()
 
 	fmt.Println("Testing Annotation API...")
 
@@ -1463,16 +1448,16 @@ func calculateSHA256Hash(data []byte) string {
 }
 
 func main() {
-	langfuseHost := os.Getenv("LANGFUSE_HOST")
-	langfusePubKey := os.Getenv("LANGFUSE_PUBLIC_KEY")
-	langfuseSecret := os.Getenv("LANGFUSE_SECRET_KEY")
-
-	if langfusePubKey == "" || langfuseSecret == "" || langfuseHost == "" {
-		fmt.Println("LANGFUSE_HOST, LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY environment variables must be set")
+	if os.Getenv("SEA_TEAM_KEY") == "" || os.Getenv("SEA_TRACES_BASE_URL") == "" {
+		fmt.Println("SEA_TEAM_KEY and SEA_TRACES_BASE_URL environment variables must be set")
 		return
 	}
 
-	client := langfuse.NewClient(langfuseHost, langfusePubKey, langfuseSecret)
+	client, err := langfuse.NewClientFromEnv(context.Background())
+	if err != nil {
+		printError("Create Sea Traces client failed: %v\n", err)
+		return
+	}
 	defer client.Close()
 
 	printInfo("================== TRACE TESTS BEGIN ==================\n")

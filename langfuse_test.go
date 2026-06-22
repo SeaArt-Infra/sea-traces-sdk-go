@@ -13,10 +13,19 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/traces"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/traces"
 )
 
+func setRequiredSeaTracesEnv(t *testing.T) {
+	t.Helper()
+
+	t.Setenv("SEA_TEAM_KEY", "sea-team-test")
+	t.Setenv("SEA_TRACES_BASE_URL", "https://sea-traces.example.com")
+}
+
 func TestNewClient_WithoutOptions(t *testing.T) {
+	setRequiredSeaTracesEnv(t)
+
 	client := NewClient("https://cloud.langfuse.com", "public-key", "secret-key")
 
 	require.NotNil(t, client)
@@ -35,9 +44,13 @@ func TestNewClient_WithoutOptions(t *testing.T) {
 	require.NotNil(t, client.media)
 	require.NotNil(t, client.metric)
 	require.NotNil(t, client.Metrics())
+	require.NotNil(t, client.AnnotationQueues())
+	require.NotNil(t, client.AnnotationItems())
 }
 
 func TestNewClient_WithHTTPClient(t *testing.T) {
+	setRequiredSeaTracesEnv(t)
+
 	customHTTPClient := &http.Client{
 		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
@@ -74,6 +87,8 @@ func TestNewClient_WithHTTPClient(t *testing.T) {
 }
 
 func TestNewClient_WithMultipleOptions(t *testing.T) {
+	setRequiredSeaTracesEnv(t)
+
 	customHTTPClient := &http.Client{
 		Timeout: 45 * time.Second,
 	}
@@ -86,6 +101,17 @@ func TestNewClient_WithMultipleOptions(t *testing.T) {
 	restyHTTPClient := client.restyCli.GetClient()
 	require.Equal(t, customHTTPClient, restyHTTPClient)
 	require.Equal(t, 45*time.Second, restyHTTPClient.Timeout)
+}
+
+func TestNewClient_RequiresSeaTracesEnv(t *testing.T) {
+	require.PanicsWithError(t, "SEA_TRACES_BASE_URL is required", func() {
+		_ = NewClient("https://cloud.langfuse.com", "public-key", "secret-key")
+	})
+
+	t.Setenv("SEA_TRACES_BASE_URL", "https://sea-traces.example.com")
+	require.PanicsWithError(t, "SEA_TEAM_KEY is required", func() {
+		_ = NewClient("https://cloud.langfuse.com", "public-key", "secret-key")
+	})
 }
 
 func TestWithHTTPClient(t *testing.T) {
@@ -233,7 +259,7 @@ func TestNewClientFromEnv(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/api/public/sea-project-api-credentials", r.URL.Path)
-		require.Equal(t, "sa-env", r.URL.Query().Get("key"))
+		require.Equal(t, "sea-team-env", r.URL.Query().Get("key"))
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"publicKey": "pk-lf-env",
@@ -244,15 +270,28 @@ func TestNewClientFromEnv(t *testing.T) {
 	}))
 	defer server.Close()
 
-	t.Setenv("SEALANGFUSE_API_KEY", "sa-env")
-	t.Setenv("LANGFUSE_BASE_URL", server.URL)
+	t.Setenv("SEA_TEAM_KEY", "sea-team-env")
+	t.Setenv("SEA_TRACES_BASE_URL", server.URL)
 
 	client, err := NewClientFromEnv(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, client)
 }
 
+func TestNewClientFromEnv_IgnoresLegacyEnv(t *testing.T) {
+	clearSealangfuseCredentialsCacheForTest()
+
+	t.Setenv("SEALANGFUSE_API_KEY", "sa-legacy")
+	t.Setenv("LANGFUSE_BASE_URL", "https://legacy.example.com")
+
+	client, err := NewClientFromEnv(context.Background())
+	require.ErrorIs(t, err, errMissingBaseURL)
+	require.Nil(t, client)
+}
+
 func TestTrace(t *testing.T) {
+	setRequiredSeaTracesEnv(t)
+
 	// Use test environment configuration instead of real environment sensitive information
 	client := NewClient("http://localhost:3000", "test-public-key", "test-secret-key")
 

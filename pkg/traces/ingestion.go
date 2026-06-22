@@ -13,7 +13,7 @@ import (
 	"github.com/go-resty/resty/v2"
 	"github.com/gofrs/uuid/v5"
 
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/batch"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/batch"
 )
 
 const (

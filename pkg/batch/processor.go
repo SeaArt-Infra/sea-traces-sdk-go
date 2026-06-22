@@ -17,7 +17,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/logger"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/logger"
 )
 
 var (

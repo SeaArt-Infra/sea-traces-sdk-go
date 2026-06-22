@@ -13,15 +13,14 @@ import (
 )
 
 const (
-	envSealangfuseAPIKey      = "SEALANGFUSE_API_KEY"
+	envSeaTeamKey             = "SEA_TEAM_KEY"
+	envSeaTracesBaseURL       = "SEA_TRACES_BASE_URL"
 	envSealangfuseCredentials = "SEALANGFUSE_CREDENTIALS_URL"
-	envLangfuseBaseURL        = "LANGFUSE_BASE_URL"
-	envLangfuseBaseURLLegacy  = "LANGFUSE_BASEURL"
 )
 
 var (
-	errMissingBaseURL = errors.New("LANGFUSE_BASE_URL is required when using SEALANGFUSE_API_KEY")
-	errMissingAPIKey  = errors.New("SEALANGFUSE_API_KEY is required")
+	errMissingBaseURL = errors.New("SEA_TRACES_BASE_URL is required")
+	errMissingAPIKey  = errors.New("SEA_TEAM_KEY is required")
 )
 
 type sealangfuseCredentials struct {
@@ -53,16 +52,12 @@ var credentialsResolverCache = struct {
 	inflight: make(map[string]*credentialsCall),
 }
 
-func getSealangfuseAPIKeyEnv() string {
-	return os.Getenv(envSealangfuseAPIKey)
+func getSeaTeamKeyEnv() string {
+	return strings.TrimSpace(os.Getenv(envSeaTeamKey))
 }
 
-func getLangfuseBaseURLEnv() string {
-	if value := os.Getenv(envLangfuseBaseURL); value != "" {
-		return value
-	}
-
-	return os.Getenv(envLangfuseBaseURLLegacy)
+func getSeaTracesBaseURLEnv() string {
+	return strings.TrimSpace(os.Getenv(envSeaTracesBaseURL))
 }
 
 func getSealangfuseCredentialsURL(baseURL string, explicitCredentialsURL string) string {

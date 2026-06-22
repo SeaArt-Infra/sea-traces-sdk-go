@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/common"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/common"
 )
 
 // ConfigCategory represents a single category option for categorical score configurations.

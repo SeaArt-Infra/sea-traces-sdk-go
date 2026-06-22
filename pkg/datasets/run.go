@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/common"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/common"
 )
 
 // DatasetRun represents an execution run against a dataset.

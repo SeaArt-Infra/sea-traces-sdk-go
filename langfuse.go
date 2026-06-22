@@ -1,4 +1,4 @@
-// Package langfuse provides a Go client library for interacting with the Langfuse platform.
+// Package langfuse provides a Go client library for interacting with Sea Traces.
 //
 // This package offers comprehensive support for observability tracing, prompt management,
 // model configuration, datasets, sessions, scores, projects, LLM connections, comments,
@@ -6,7 +6,10 @@
 //
 // Basic usage:
 //
-//	client := langfuse.NewClient("https://cloud.langfuse.com", "your-public-key", "your-secret-key")
+//	client, err := langfuse.NewClientFromEnv(context.Background())
+//	if err != nil {
+//		return err
+//	}
 //	defer client.Close()
 //
 //	trace := client.StartTrace("my-application")
@@ -19,23 +22,25 @@ package langfuse
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/go-resty/resty/v2"
 
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/organizations"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/organizations"
 
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/comments"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/datasets"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/health"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/llmconnections"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/media"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/metrics"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/models"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/projects"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/prompts"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/scores"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/sessions"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/sealangfus-sdk-go.git/pkg/traces"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/annotations"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/comments"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/datasets"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/health"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/llmconnections"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/media"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/metrics"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/models"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/projects"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/prompts"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/scores"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/sessions"
+	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/traces"
 )
 
 // Langfuse is the main client for interacting with the Langfuse platform.
@@ -60,6 +65,8 @@ type Langfuse struct {
 	health        *health.Client
 	media         *media.Client
 	metric        *metrics.Client
+	annotationQ   *annotations.QueueClient
+	annotationI   *annotations.ItemClient
 	restyCli      *resty.Client
 }
 
@@ -86,7 +93,7 @@ type clientConfig struct {
 //			MaxIdleConnsPerHost: 10,
 //		},
 //	}
-//	client := langfuse.NewClient("https://cloud.langfuse.com", "public-key", "secret-key", langfuse.WithHTTPClient(httpClient))
+//	client, err := langfuse.NewClientWithAPIKey(ctx, baseURL, teamKey, langfuse.WithHTTPClient(httpClient))
 func WithHTTPClient(httpClient *http.Client) ClientOption {
 	return func(config *clientConfig) {
 		config.httpClient = httpClient
@@ -104,11 +111,11 @@ func WithCredentialsURL(credentialsURL string) ClientOption {
 	}
 }
 
-// NewClient creates a new Langfuse client instance with the specified host and credentials.
+// NewClient creates a new Langfuse client instance with resolved project credentials.
 //
-// The host should be the base URL of your Langfuse instance (e.g., "https://cloud.langfuse.com").
-// The publicKey and secretKey are obtained from your Langfuse project settings.
-// Optional configuration can be provided using ClientOption functions.
+// Deprecated: use NewClientWithAPIKey or NewClientFromEnv. This compatibility
+// constructor still requires SEA_TEAM_KEY and SEA_TRACES_BASE_URL to be set so
+// the SDK cannot be used without the required Sea Traces configuration.
 //
 // The client automatically configures HTTP basic authentication and sets the API base URL.
 // Remember to call Close() when done to ensure all pending traces are flushed.
@@ -116,17 +123,26 @@ func WithCredentialsURL(credentialsURL string) ClientOption {
 // Example with custom HTTP client:
 //
 //	httpClient := &http.Client{Timeout: 30 * time.Second}
-//	client := langfuse.NewClient("https://cloud.langfuse.com", "public-key", "secret-key", langfuse.WithHTTPClient(httpClient))
 func NewClient(host string, publicKey string, secretKey string, options ...ClientOption) *Langfuse {
+	mustHaveSeaTracesConfig()
 	return newClientWithCredentials(host, publicKey, secretKey, options...)
 }
 
-// NewClientWithAPIKey creates a new Langfuse client by resolving project credentials
-// from a Sealangfuse API key.
+// NewClientWithAPIKey creates a new Sea Traces client by resolving project credentials
+// from a Sea Traces team key.
 //
-// The host is the final Langfuse base URL used for ingestion and API requests.
+// The host is the final Sea Traces base URL used for ingestion and API requests.
 // The resolver response baseUrl is validated but does not override host.
 func NewClientWithAPIKey(ctx context.Context, host string, apiKey string, options ...ClientOption) (*Langfuse, error) {
+	host = strings.TrimSpace(host)
+	apiKey = strings.TrimSpace(apiKey)
+	if host == "" {
+		return nil, errMissingBaseURL
+	}
+	if apiKey == "" {
+		return nil, errMissingAPIKey
+	}
+
 	config := &clientConfig{}
 	for _, option := range options {
 		option(config)
@@ -145,10 +161,10 @@ func NewClientWithAPIKey(ctx context.Context, host string, apiKey string, option
 	return newClientWithCredentials(host, credentials.PublicKey, credentials.SecretKey, options...), nil
 }
 
-// NewClientFromEnv creates a new Langfuse client from SEALANGFUSE_API_KEY and LANGFUSE_BASE_URL.
+// NewClientFromEnv creates a new Sea Traces client from SEA_TEAM_KEY and SEA_TRACES_BASE_URL.
 func NewClientFromEnv(ctx context.Context, options ...ClientOption) (*Langfuse, error) {
-	host := getLangfuseBaseURLEnv()
-	apiKey := getSealangfuseAPIKeyEnv()
+	host := getSeaTracesBaseURLEnv()
+	apiKey := getSeaTeamKeyEnv()
 	if host == "" {
 		return nil, errMissingBaseURL
 	}
@@ -157,6 +173,15 @@ func NewClientFromEnv(ctx context.Context, options ...ClientOption) (*Langfuse, 
 	}
 
 	return NewClientWithAPIKey(ctx, host, apiKey, options...)
+}
+
+func mustHaveSeaTracesConfig() {
+	if getSeaTracesBaseURLEnv() == "" {
+		panic(errMissingBaseURL)
+	}
+	if getSeaTeamKeyEnv() == "" {
+		panic(errMissingAPIKey)
+	}
 }
 
 func newClientWithCredentials(host string, publicKey string, secretKey string, options ...ClientOption) *Langfuse {
@@ -189,6 +214,8 @@ func newClientWithCredentials(host string, publicKey string, secretKey string, o
 		health:        health.NewClient(restyCli),
 		media:         media.NewClient(restyCli),
 		metric:        metrics.NewClient(restyCli),
+		annotationQ:   annotations.NewQueueClient(restyCli),
+		annotationI:   annotations.NewItemClient(restyCli),
 		restyCli:      restyCli,
 	}
 }
@@ -302,6 +329,14 @@ func (c *Langfuse) Media() *media.Client {
 // observations, and scores through the public metrics API.
 func (c *Langfuse) Metrics() *metrics.Client {
 	return c.metric
+}
+
+func (c *Langfuse) AnnotationQueues() *annotations.QueueClient {
+	return c.annotationQ
+}
+
+func (c *Langfuse) AnnotationItems() *annotations.ItemClient {
+	return c.annotationI
 }
 
 // Close gracefully shuts down the client and flushes all pending traces.
