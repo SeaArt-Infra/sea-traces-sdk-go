@@ -126,10 +126,10 @@ func fetchSealangfuseCredentials(ctx context.Context, params resolveSealangfuseC
 	response, err := httpClient.Do(request)
 	if err != nil {
 		return sealangfuseCredentials{}, fmt.Errorf(
-			"resolve Sealangfuse credentials from %s for key %s: %w",
+			"resolve Sealangfuse credentials from %s for key %s: %v",
 			credentialsURL,
 			maskSealangfuseAPIKey(params.apiKey),
-			err,
+			maskSealangfuseRequestError(err),
 		)
 	}
 	defer response.Body.Close()
@@ -165,6 +165,20 @@ func maskSealangfuseAPIKey(apiKey string) string {
 	}
 
 	return apiKey[:6] + "..." + apiKey[len(apiKey)-4:]
+}
+
+func maskSealangfuseRequestError(err error) error {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		masked := *urlErr
+		if requestURL, parseErr := url.Parse(masked.URL); parseErr == nil {
+			requestURL.RawQuery = ""
+			masked.URL = requestURL.String()
+		}
+		return &masked
+	}
+
+	return err
 }
 
 func clearSealangfuseCredentialsCacheForTest() {

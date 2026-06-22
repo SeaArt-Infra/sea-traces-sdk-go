@@ -218,6 +218,21 @@ func TestNewClientWithAPIKey_InactiveCredentials(t *testing.T) {
 	require.Nil(t, client)
 }
 
+func TestNewClientWithAPIKey_MasksResolverRequestURLOnNetworkError(t *testing.T) {
+	clearSealangfuseCredentialsCacheForTest()
+
+	client, err := NewClientWithAPIKey(
+		context.Background(),
+		"https://sea-traces.example.invalid",
+		"sa-super-secret-team-key",
+	)
+	require.Error(t, err)
+	require.Nil(t, client)
+	require.Contains(t, err.Error(), "sa-sup...-key")
+	require.NotContains(t, err.Error(), "sa-super-secret-team-key")
+	require.NotContains(t, err.Error(), "?key=")
+}
+
 func TestNewClientWithAPIKey_DeduplicatesConcurrentResolution(t *testing.T) {
 	clearSealangfuseCredentialsCacheForTest()
 
