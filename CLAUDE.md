@@ -57,7 +57,7 @@ go run integration/integration.go  # Run integration tests (requires env setup)
 ### Code Formatting
 ```bash
 make format                 # Format with goimports + gofmt (includes local import ordering)
-goimports -w -local gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git ./...
+goimports -w -local github.com/SeaArt-Infra/sea-traces-sdk-go ./...
 ```
 
 ### Build & Linting

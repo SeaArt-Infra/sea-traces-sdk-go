@@ -10,7 +10,7 @@ import (
 	"github.com/go-resty/resty/v2"
 	"github.com/stretchr/testify/require"
 
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/common"
+	"github.com/SeaArt-Infra/sea-traces-sdk-go/pkg/common"
 )
 
 func TestCreateDatasetItemRequest_validate(t *testing.T) {

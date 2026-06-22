@@ -10,18 +10,18 @@ import (
 
 	"github.com/gofrs/uuid/v5"
 
-	langfuse "gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/annotations"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/comments"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/datasets"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/llmconnections"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/media"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/models"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/organizations"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/projects"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/prompts"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/scores"
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/traces"
+	langfuse "github.com/SeaArt-Infra/sea-traces-sdk-go"
+	"github.com/SeaArt-Infra/sea-traces-sdk-go/pkg/annotations"
+	"github.com/SeaArt-Infra/sea-traces-sdk-go/pkg/comments"
+	"github.com/SeaArt-Infra/sea-traces-sdk-go/pkg/datasets"
+	"github.com/SeaArt-Infra/sea-traces-sdk-go/pkg/llmconnections"
+	"github.com/SeaArt-Infra/sea-traces-sdk-go/pkg/media"
+	"github.com/SeaArt-Infra/sea-traces-sdk-go/pkg/models"
+	"github.com/SeaArt-Infra/sea-traces-sdk-go/pkg/organizations"
+	"github.com/SeaArt-Infra/sea-traces-sdk-go/pkg/projects"
+	"github.com/SeaArt-Infra/sea-traces-sdk-go/pkg/prompts"
+	"github.com/SeaArt-Infra/sea-traces-sdk-go/pkg/scores"
+	"github.com/SeaArt-Infra/sea-traces-sdk-go/pkg/traces"
 )
 
 // ANSI color codes

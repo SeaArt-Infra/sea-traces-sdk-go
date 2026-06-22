@@ -15,7 +15,7 @@ import (
 
 	"github.com/hashicorp/go-set/v3"
 
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/common"
+	"github.com/SeaArt-Infra/sea-traces-sdk-go/pkg/common"
 
 	"github.com/go-resty/resty/v2"
 )

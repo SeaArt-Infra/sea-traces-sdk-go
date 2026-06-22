@@ -5,7 +5,7 @@ Go client and SDK for Sea Traces. The SDK keeps the existing Langfuse ingestion 
 ## Installation
 
 ```bash
-go get gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git
+go get github.com/SeaArt-Infra/sea-traces-sdk-go
 ```
 
 ## Configuration
@@ -28,7 +28,7 @@ import (
     "context"
     "log"
 
-    seatraces "gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git"
+    seatraces "github.com/SeaArt-Infra/sea-traces-sdk-go"
 )
 
 func main() {

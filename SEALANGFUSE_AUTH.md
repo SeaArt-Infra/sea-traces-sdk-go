@@ -32,7 +32,7 @@ import (
     "context"
     "log"
 
-    seatraces "gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git"
+    seatraces "github.com/SeaArt-Infra/sea-traces-sdk-go"
 )
 
 func main() {

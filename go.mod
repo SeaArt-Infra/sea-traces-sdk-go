@@ -1,4 +1,4 @@
-module gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git
+module github.com/SeaArt-Infra/sea-traces-sdk-go
 
 go 1.23
 

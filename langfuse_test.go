@@ -13,7 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"gitlab.internal.ops.haiyiai.tech/seaart-infra/seatraces-sdk-go.git/pkg/traces"
+	"github.com/SeaArt-Infra/sea-traces-sdk-go/pkg/traces"
 )
 
 func setRequiredSeaTracesEnv(t *testing.T) {
