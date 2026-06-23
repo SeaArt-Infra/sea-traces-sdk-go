@@ -1,25 +1,35 @@
 # Sea Traces Go SDK
 
-Go client and SDK for Sea Traces. The SDK keeps the existing Langfuse ingestion and API pipeline internally while exposing Sea Traces module naming and required team-key authentication.
+Sea Traces 的 Go 客户端和 SDK。SDK 对外使用 Sea Traces 模块命名，并要求通过 team key 完成鉴权。
 
-## Installation
+## 安装
+
+目前依赖只能通过 GitHub module path 安装：
 
 ```bash
 go get github.com/SeaArt-Infra/sea-traces-sdk-go
 ```
 
-## Configuration
+## 配置
 
-The SDK requires both values at initialization time:
+Sea Traces Go SDK 使用 team key 和 Sea Traces base URL 初始化。正常使用时，用户不需要直接传项目 public key 和 secret key。SDK 会先解析一次项目凭证，然后使用解析后的凭证完成上报和 API 请求。
+
+初始化时必须提供以下两个配置：
 
 ```bash
-SEA_TEAM_KEY=sea-team-key
-SEA_TRACES_BASE_URL=https://your-sea-traces.example.com
+export SEA_TEAM_KEY="sea-team-key"
+export SEA_TRACES_BASE_URL="https://your-sea-traces.example.com"
 ```
 
-`SEALANGFUSE_API_KEY`, `LANGFUSE_BASE_URL`, and default Langfuse Cloud values do not enable the renamed SDK by themselves.
+默认的凭证解析请求为：
 
-## Usage
+```text
+GET {SEA_TRACES_BASE_URL}/api/public/sea-project-api-credentials?key={SEA_TEAM_KEY}
+```
+
+必须配置 `SEA_TEAM_KEY` 和 `SEA_TRACES_BASE_URL`，只配置其他历史环境变量不会启用 Sea Traces SDK。
+
+## 使用方式
 
 ```go
 package main
@@ -49,7 +59,7 @@ func main() {
 }
 ```
 
-Equivalent explicit configuration:
+也可以显式传入配置：
 
 ```go
 client, err := seatraces.NewClientWithAPIKey(
@@ -59,15 +69,115 @@ client, err := seatraces.NewClientWithAPIKey(
 )
 ```
 
-See [SEALANGFUSE_AUTH.md](./SEALANGFUSE_AUTH.md) for resolver details, cache behavior, and migration notes.
+如果需要覆盖凭证解析地址：
 
-## Development
+```go
+client, err := seatraces.NewClientWithAPIKey(
+    ctx,
+    "https://your-sea-traces.example.com",
+    "sea-team-key",
+    seatraces.WithCredentialsURL(
+        "https://your-sea-traces.example.com/api/public/sea-project-api-credentials",
+    ),
+)
+```
+
+`NewClientFromEnv` 会读取：
+
+- `SEA_TEAM_KEY`
+- `SEA_TRACES_BASE_URL`
+
+## 上报模型
+
+SDK 有两种上报模式：每次创建独立 trace，或在同一个 trace 里追加子 observation。
+
+### 独立 trace
+
+每次独立调用 `client.StartTrace(ctx, name)`，都会创建新的 trace：
+
+```go
+traceA := client.StartTrace(ctx, "task-a")
+spanA := traceA.StartSpan("task-a")
+spanA.Input = map[string]any{"step": "a"}
+spanA.Output = map[string]any{"ok": true}
+spanA.End()
+traceA.End()
+
+traceB := client.StartTrace(ctx, "task-b")
+spanB := traceB.StartSpan("task-b")
+spanB.Input = map[string]any{"step": "b"}
+spanB.Output = map[string]any{"ok": true}
+spanB.End()
+traceB.End()
+
+client.Flush()
+```
+
+上面示例会产生两个独立 trace：`task-a` 和 `task-b`。
+
+### 在同一个 trace 里追加
+
+如果要把一次业务流程里的多个步骤挂到同一个 trace 下，先创建一个 trace，再通过这个 trace 创建 span、generation 或其他 observation：
+
+下面示例需要额外导入 `github.com/SeaArt-Infra/sea-traces-sdk-go/pkg/traces` 和 `github.com/SeaArt-Infra/sea-traces-sdk-go/pkg/scores`。
+
+```go
+trace := client.StartTrace(ctx, "checkout-flow")
+trace.Input = map[string]any{"step": "start"}
+
+span := trace.StartSpan("checkout-flow")
+span.Input = map[string]any{"step": "start"}
+
+generation := trace.StartGeneration("llm-call")
+generation.Model = "demo-model"
+generation.Input = []map[string]string{
+    {"role": "user", "content": "ping"},
+}
+generation.Output = []map[string]string{
+    {"role": "assistant", "content": "pong"},
+}
+generation.Usage = traces.Usage{
+    Input:  1,
+    Output: 1,
+    Total:  2,
+    Unit:   traces.UnitTokens,
+}
+generation.End()
+
+span.Output = map[string]any{"ok": true}
+span.End()
+
+trace.Output = map[string]any{"ok": true}
+trace.End()
+
+_, err := client.Scores().Create(ctx, &scores.CreateScoreRequest{
+    TraceID:  trace.ID,
+    Name:     "quality",
+    Value:    1.0,
+    DataType: scores.ScoreDataTypeNumeric,
+})
+if err != nil {
+    log.Fatal(err)
+}
+
+client.Flush()
+```
+
+上面示例里，`checkout-flow` 是一个 trace，`checkout-flow` span 和 `llm-call` generation 都归属到这个 trace 下。
+
+调用 `trace.End()` 后，SDK 会结束当前 trace，并将该 trace 及其 observations 放入待上报队列。进程退出前需要调用 `client.Flush()` 或 `client.Close()`，确保待上报批次被发送出去。
+
+## 安全
+
+不要提交 `SEA_TEAM_KEY` 或 `.env` 文件。不要在日志中打印完整 team key、解析后的 `secretKey` 或原始凭证响应。
+
+## 开发
 
 ```bash
 go build ./...
 go test ./...
 ```
 
-## License
+## 许可证
 
 [MIT](LICENSE)
