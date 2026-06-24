@@ -1448,8 +1448,14 @@ func calculateSHA256Hash(data []byte) string {
 }
 
 func main() {
-	if os.Getenv("SEA_TEAM_KEY") == "" || os.Getenv("SEA_TRACES_BASE_URL") == "" {
-		fmt.Println("SEA_TEAM_KEY and SEA_TRACES_BASE_URL environment variables must be set")
+	hasDirectConfig := os.Getenv("SEATRACES_PUBLIC_KEY") != "" &&
+		os.Getenv("SEATRACES_SECRET_KEY") != "" &&
+		os.Getenv("SEATRACES_BASE_URL") != ""
+	hasGatewayConfig := os.Getenv("SEA_TRACES_API_KEY") != "" &&
+		os.Getenv("SEA_TRACES_BASE_URL") != "" &&
+		os.Getenv("SEA_TRACES_PROJECT_ID") != ""
+	if !hasDirectConfig && !hasGatewayConfig {
+		fmt.Println("Set either SEATRACES_PUBLIC_KEY/SEATRACES_SECRET_KEY/SEATRACES_BASE_URL or SEA_TRACES_API_KEY/SEA_TRACES_BASE_URL/SEA_TRACES_PROJECT_ID")
 		return
 	}
 

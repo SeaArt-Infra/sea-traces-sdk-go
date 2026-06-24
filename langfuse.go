@@ -73,6 +73,15 @@ type Langfuse struct {
 // ClientOption is a function that configures a Langfuse client.
 type ClientOption func(*clientConfig)
 
+// Config contains Sea Traces client authentication settings.
+type Config struct {
+	PublicKey string
+	SecretKey string
+	BaseURL   string
+	APIKey    string
+	ProjectID string
+}
+
 // clientConfig holds configuration options for the Langfuse client.
 type clientConfig struct {
 	httpClient     *http.Client
@@ -93,29 +102,25 @@ type clientConfig struct {
 //			MaxIdleConnsPerHost: 10,
 //		},
 //	}
-//	client, err := langfuse.NewClientWithAPIKey(ctx, baseURL, teamKey, langfuse.WithHTTPClient(httpClient))
+//	client, err := langfuse.NewClientWithConfig(ctx, config, langfuse.WithHTTPClient(httpClient))
 func WithHTTPClient(httpClient *http.Client) ClientOption {
 	return func(config *clientConfig) {
 		config.httpClient = httpClient
 	}
 }
 
-// WithCredentialsURL overrides the Sealangfuse credential resolver endpoint.
+// WithCredentialsURL overrides the Sea Traces gateway credential resolver endpoint.
 //
-// By default, NewClientWithAPIKey resolves credentials from:
+// By default, gateway auth resolves credentials from:
 //
-//	{host}/api/public/sea-project-api-credentials
+//	{baseURL}/hub/sea-traces-api-key
 func WithCredentialsURL(credentialsURL string) ClientOption {
 	return func(config *clientConfig) {
 		config.credentialsURL = credentialsURL
 	}
 }
 
-// NewClient creates a new Langfuse client instance with resolved project credentials.
-//
-// Deprecated: use NewClientWithAPIKey or NewClientFromEnv. This compatibility
-// constructor still requires SEA_TEAM_KEY and SEA_TRACES_BASE_URL to be set so
-// the SDK cannot be used without the required Sea Traces configuration.
+// NewClient creates a new Langfuse client instance with direct upload credentials.
 //
 // The client automatically configures HTTP basic authentication and sets the API base URL.
 // Remember to call Close() when done to ensure all pending traces are flushed.
@@ -124,64 +129,118 @@ func WithCredentialsURL(credentialsURL string) ClientOption {
 //
 //	httpClient := &http.Client{Timeout: 30 * time.Second}
 func NewClient(host string, publicKey string, secretKey string, options ...ClientOption) *Langfuse {
-	mustHaveSeaTracesConfig()
 	return newClientWithCredentials(host, publicKey, secretKey, options...)
 }
 
-// NewClientWithAPIKey creates a new Sea Traces client by resolving project credentials
-// from a Sea Traces team key.
-//
-// The host is the final Sea Traces base URL used for ingestion and API requests.
-// The resolver response baseUrl is validated but does not override host.
-func NewClientWithAPIKey(ctx context.Context, host string, apiKey string, options ...ClientOption) (*Langfuse, error) {
-	host = strings.TrimSpace(host)
-	apiKey = strings.TrimSpace(apiKey)
-	if host == "" {
-		return nil, errMissingBaseURL
-	}
-	if apiKey == "" {
-		return nil, errMissingAPIKey
+// NewClientWithConfig creates a new Sea Traces client from direct upload credentials
+// or gateway credentials. Complete direct credentials take precedence over gateway
+// credentials.
+func NewClientWithConfig(ctx context.Context, config Config, options ...ClientOption) (*Langfuse, error) {
+	config = trimConfig(config)
+	if isDirectConfigComplete(config) {
+		return newClientWithCredentials(config.BaseURL, config.PublicKey, config.SecretKey, options...), nil
 	}
 
-	config := &clientConfig{}
+	if !isGatewayConfigComplete(config) {
+		return nil, missingConfigError(config)
+	}
+
+	clientConfig := &clientConfig{}
 	for _, option := range options {
-		option(config)
+		option(clientConfig)
 	}
 
-	credentials, err := resolveSealangfuseCredentials(ctx, resolveSealangfuseCredentialsParams{
-		apiKey:         apiKey,
-		baseURL:        host,
-		credentialsURL: config.credentialsURL,
-		httpClient:     config.httpClient,
+	credentials, err := resolveSeaTracesCredentials(ctx, resolveSeaTracesCredentialsParams{
+		apiKey:         config.APIKey,
+		baseURL:        config.BaseURL,
+		projectID:      config.ProjectID,
+		credentialsURL: clientConfig.credentialsURL,
+		httpClient:     clientConfig.httpClient,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return newClientWithCredentials(host, credentials.PublicKey, credentials.SecretKey, options...), nil
+	return newClientWithCredentials(credentials.BaseURL, credentials.PublicKey, credentials.SecretKey, options...), nil
 }
 
-// NewClientFromEnv creates a new Sea Traces client from SEA_TEAM_KEY and SEA_TRACES_BASE_URL.
+// NewClientWithAPIKey creates a new Sea Traces client by resolving project
+// upload credentials from gateway auth settings.
+//
+// Deprecated: use NewClientWithConfig with APIKey, BaseURL, and ProjectID.
+func NewClientWithAPIKey(ctx context.Context, host string, apiKey string, options ...ClientOption) (*Langfuse, error) {
+	return NewClientWithConfig(ctx, Config{
+		APIKey:    apiKey,
+		BaseURL:   host,
+		ProjectID: getSeaTracesProjectIDEnv(),
+	}, options...)
+}
+
+// NewClientFromEnv creates a new Sea Traces client from environment variables.
 func NewClientFromEnv(ctx context.Context, options ...ClientOption) (*Langfuse, error) {
-	host := getSeaTracesBaseURLEnv()
-	apiKey := getSeaTeamKeyEnv()
-	if host == "" {
-		return nil, errMissingBaseURL
+	config := Config{
+		PublicKey: getSeaTracesPublicKeyEnv(),
+		SecretKey: getSeaTracesSecretKeyEnv(),
+		BaseURL:   getSeaTracesBaseURLEnv(),
 	}
-	if apiKey == "" {
-		return nil, errMissingAPIKey
+	if isDirectConfigComplete(config) {
+		return NewClientWithConfig(ctx, config, options...)
 	}
 
-	return NewClientWithAPIKey(ctx, host, apiKey, options...)
+	config = Config{
+		APIKey:    getSeaTracesAPIKeyEnv(),
+		BaseURL:   getSeaTracesGatewayBaseURLEnv(),
+		ProjectID: getSeaTracesProjectIDEnv(),
+	}
+	if isGatewayConfigComplete(config) {
+		return NewClientWithConfig(ctx, config, options...)
+	}
+
+	legacyConfig := legacyDirectConfigFromEnv()
+	if isDirectConfigComplete(legacyConfig) {
+		return NewClientWithConfig(ctx, legacyConfig, options...)
+	}
+
+	return nil, missingConfigError(Config{
+		PublicKey: getSeaTracesPublicKeyEnv(),
+		SecretKey: getSeaTracesSecretKeyEnv(),
+		BaseURL:   firstNonEmpty(getSeaTracesBaseURLEnv(), getSeaTracesGatewayBaseURLEnv()),
+		APIKey:    getSeaTracesAPIKeyEnv(),
+		ProjectID: getSeaTracesProjectIDEnv(),
+	})
 }
 
-func mustHaveSeaTracesConfig() {
-	if getSeaTracesBaseURLEnv() == "" {
-		panic(errMissingBaseURL)
+func trimConfig(config Config) Config {
+	config.PublicKey = strings.TrimSpace(config.PublicKey)
+	config.SecretKey = strings.TrimSpace(config.SecretKey)
+	config.BaseURL = strings.TrimSpace(config.BaseURL)
+	config.APIKey = strings.TrimSpace(config.APIKey)
+	config.ProjectID = strings.TrimSpace(config.ProjectID)
+	return config
+}
+
+func isDirectConfigComplete(config Config) bool {
+	return config.PublicKey != "" && config.SecretKey != "" && config.BaseURL != ""
+}
+
+func isGatewayConfigComplete(config Config) bool {
+	return config.APIKey != "" && config.BaseURL != "" && config.ProjectID != ""
+}
+
+func missingConfigError(config Config) error {
+	if config.APIKey != "" || config.ProjectID != "" || (config.BaseURL != "" && config.PublicKey == "" && config.SecretKey == "") {
+		return errMissingGatewayConfig
 	}
-	if getSeaTeamKeyEnv() == "" {
-		panic(errMissingAPIKey)
+	return errMissingDirectConfig
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
 	}
+	return ""
 }
 
 func newClientWithCredentials(host string, publicKey string, secretKey string, options ...ClientOption) *Langfuse {

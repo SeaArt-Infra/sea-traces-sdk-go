@@ -16,17 +16,8 @@ import (
 	"github.com/SeaArt-Infra/sea-traces-sdk-go/pkg/traces"
 )
 
-func setRequiredSeaTracesEnv(t *testing.T) {
+func assertClientInitialized(t *testing.T, client *Langfuse) {
 	t.Helper()
-
-	t.Setenv("SEA_TEAM_KEY", "sea-team-test")
-	t.Setenv("SEA_TRACES_BASE_URL", "https://sea-traces.example.com")
-}
-
-func TestNewClient_WithoutOptions(t *testing.T) {
-	setRequiredSeaTracesEnv(t)
-
-	client := NewClient("https://cloud.langfuse.com", "public-key", "secret-key")
 
 	require.NotNil(t, client)
 	require.NotNil(t, client.restyCli)
@@ -48,9 +39,17 @@ func TestNewClient_WithoutOptions(t *testing.T) {
 	require.NotNil(t, client.AnnotationItems())
 }
 
-func TestNewClient_WithHTTPClient(t *testing.T) {
-	setRequiredSeaTracesEnv(t)
+func serverURL(r *http.Request) string {
+	return "http://" + r.Host
+}
 
+func TestNewClient_WithoutOptions(t *testing.T) {
+	client := NewClient("https://cloud.langfuse.com", "public-key", "secret-key")
+
+	assertClientInitialized(t, client)
+}
+
+func TestNewClient_WithHTTPClient(t *testing.T) {
 	customHTTPClient := &http.Client{
 		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
@@ -69,26 +68,10 @@ func TestNewClient_WithHTTPClient(t *testing.T) {
 	require.Equal(t, customHTTPClient, restyHTTPClient)
 	require.Equal(t, 30*time.Second, restyHTTPClient.Timeout)
 
-	// Verify that all subclients are properly initialized
-	require.NotNil(t, client.ingestor)
-	require.NotNil(t, client.prompt)
-	require.NotNil(t, client.model)
-	require.NotNil(t, client.project)
-	require.NotNil(t, client.comment)
-	require.NotNil(t, client.dataset)
-	require.NotNil(t, client.session)
-	require.NotNil(t, client.score)
-	require.NotNil(t, client.llmConnection)
-	require.NotNil(t, client.organization)
-	require.NotNil(t, client.health)
-	require.NotNil(t, client.media)
-	require.NotNil(t, client.metric)
-	require.NotNil(t, client.Metrics())
+	assertClientInitialized(t, client)
 }
 
 func TestNewClient_WithMultipleOptions(t *testing.T) {
-	setRequiredSeaTracesEnv(t)
-
 	customHTTPClient := &http.Client{
 		Timeout: 45 * time.Second,
 	}
@@ -101,17 +84,6 @@ func TestNewClient_WithMultipleOptions(t *testing.T) {
 	restyHTTPClient := client.restyCli.GetClient()
 	require.Equal(t, customHTTPClient, restyHTTPClient)
 	require.Equal(t, 45*time.Second, restyHTTPClient.Timeout)
-}
-
-func TestNewClient_RequiresSeaTracesEnv(t *testing.T) {
-	require.PanicsWithError(t, "SEA_TRACES_BASE_URL is required", func() {
-		_ = NewClient("https://cloud.langfuse.com", "public-key", "secret-key")
-	})
-
-	t.Setenv("SEA_TRACES_BASE_URL", "https://sea-traces.example.com")
-	require.PanicsWithError(t, "SEA_TEAM_KEY is required", func() {
-		_ = NewClient("https://cloud.langfuse.com", "public-key", "secret-key")
-	})
 }
 
 func TestWithHTTPClient(t *testing.T) {
@@ -131,22 +103,106 @@ func TestClientConfig_Default(t *testing.T) {
 	require.Nil(t, config.httpClient)
 }
 
-func TestNewClientWithAPIKey(t *testing.T) {
+func TestNewClientWithConfig_DirectConfigSkipsResolver(t *testing.T) {
 	clearSealangfuseCredentialsCacheForTest()
 
 	var resolverCalls int32
 	var healthAuth string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/public/sea-project-api-credentials":
+		case "/hub/sea-traces-api-key":
 			atomic.AddInt32(&resolverCalls, 1)
-			require.Equal(t, "sa-test", r.URL.Query().Get("key"))
+			http.Error(w, "resolver should not be called", http.StatusInternalServerError)
+		case "/api/public/health":
+			healthAuth = r.Header.Get("Authorization")
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]string{
-				"publicKey": "pk-lf-resolved",
-				"secretKey": "sk-lf-resolved",
-				"baseUrl":   "https://resolver-response.example.com",
-				"status":    "ACTIVE",
+				"version": "test",
+				"status":  "OK",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClientWithConfig(context.Background(), Config{
+		PublicKey: "pk-direct",
+		SecretKey: "sk-direct",
+		BaseURL:   server.URL,
+		APIKey:    "gateway-ignored",
+		ProjectID: "project-ignored",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, client)
+
+	health, err := client.Health().Check(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "OK", health.Status)
+	require.Equal(t, int32(0), atomic.LoadInt32(&resolverCalls))
+	require.Equal(t, "Basic "+base64.StdEncoding.EncodeToString([]byte("pk-direct:sk-direct")), healthAuth)
+}
+
+func TestNewClientFromEnv_DirectEnvSkipsResolver(t *testing.T) {
+	clearSealangfuseCredentialsCacheForTest()
+
+	var resolverCalls int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hub/sea-traces-api-key":
+			atomic.AddInt32(&resolverCalls, 1)
+			http.Error(w, "resolver should not be called", http.StatusInternalServerError)
+		case "/api/public/health":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"version": "test",
+				"status":  "OK",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("SEATRACES_PUBLIC_KEY", "pk-env")
+	t.Setenv("SEATRACES_SECRET_KEY", "sk-env")
+	t.Setenv("SEATRACES_BASE_URL", server.URL)
+	t.Setenv("SEA_TRACES_API_KEY", "gateway-ignored")
+	t.Setenv("SEA_TRACES_BASE_URL", server.URL)
+	t.Setenv("SEA_TRACES_PROJECT_ID", "project-ignored")
+
+	client, err := NewClientFromEnv(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, client)
+	require.Equal(t, int32(0), atomic.LoadInt32(&resolverCalls))
+	require.Equal(t, server.URL+"/api/public", client.restyCli.BaseURL)
+}
+
+func TestNewClientWithConfig_GatewayConfigPostsResolverBody(t *testing.T) {
+	clearSealangfuseCredentialsCacheForTest()
+
+	var resolverCalls int32
+	var healthAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hub/sea-traces-api-key":
+			atomic.AddInt32(&resolverCalls, 1)
+			require.Equal(t, http.MethodPost, r.Method)
+			require.Equal(t, "application/json", r.Header.Get("Content-Type"))
+
+			var body map[string]string
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+			require.Equal(t, map[string]string{
+				"api_key":    "sa-test",
+				"base_url":   serverURL(r),
+				"project_id": "project-123",
+			}, body)
+
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"publicKey": "pk-resolved",
+				"secretKey": "sk-resolved",
+				"baseUrl":   serverURL(r),
 			})
 		case "/api/public/health":
 			healthAuth = r.Header.Get("Authorization")
@@ -161,7 +217,11 @@ func TestNewClientWithAPIKey(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClientWithAPIKey(context.Background(), server.URL, "sa-test")
+	client, err := NewClientWithConfig(context.Background(), Config{
+		APIKey:    "sa-test",
+		BaseURL:   server.URL,
+		ProjectID: "project-123",
+	})
 	require.NoError(t, err)
 	require.NotNil(t, client)
 
@@ -169,71 +229,172 @@ func TestNewClientWithAPIKey(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "OK", health.Status)
 	require.Equal(t, int32(1), atomic.LoadInt32(&resolverCalls))
-	require.Equal(t, "Basic "+base64.StdEncoding.EncodeToString([]byte("pk-lf-resolved:sk-lf-resolved")), healthAuth)
+	require.Equal(t, "Basic "+base64.StdEncoding.EncodeToString([]byte("pk-resolved:sk-resolved")), healthAuth)
+	require.Equal(t, server.URL+"/api/public", client.restyCli.BaseURL)
 }
 
-func TestNewClientWithAPIKey_UsesCredentialsURLOverride(t *testing.T) {
+func TestNewClientWithConfig_UsesCredentialsURLOverride(t *testing.T) {
 	clearSealangfuseCredentialsCacheForTest()
 
 	resolver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, "/credentials", r.URL.Path)
-		require.Equal(t, "sa-test", r.URL.Query().Get("key"))
+		require.Equal(t, http.MethodPost, r.Method)
+		var body map[string]string
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		require.Equal(t, "sa-test", body["api_key"])
+		require.Equal(t, "project-123", body["project_id"])
+
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{
-			"publicKey": "pk-lf-override",
-			"secretKey": "sk-lf-override",
+			"publicKey": "pk-override",
+			"secretKey": "sk-override",
 			"baseUrl":   "https://resolver-response.example.com",
-			"status":    "ACTIVE",
 		})
 	}))
 	defer resolver.Close()
 
-	client, err := NewClientWithAPIKey(
+	client, err := NewClientWithConfig(
 		context.Background(),
-		"https://langfuse.example.com",
-		"sa-test",
+		Config{
+			APIKey:    "sa-test",
+			BaseURL:   "https://gateway.example.com",
+			ProjectID: "project-123",
+		},
 		WithCredentialsURL(resolver.URL+"/credentials"),
 	)
 	require.NoError(t, err)
 	require.NotNil(t, client)
-	require.Equal(t, "https://langfuse.example.com/api/public", client.restyCli.BaseURL)
+	require.Equal(t, "https://resolver-response.example.com/api/public", client.restyCli.BaseURL)
 }
 
-func TestNewClientWithAPIKey_InactiveCredentials(t *testing.T) {
+func TestNewClientFromEnv_IncompleteDirectEnvUsesGatewayResponseOnly(t *testing.T) {
+	clearSealangfuseCredentialsCacheForTest()
+
+	var healthAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/hub/sea-traces-api-key":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"publicKey": "pk-resolved",
+				"secretKey": "sk-resolved",
+				"baseUrl":   serverURL(r),
+			})
+		case "/api/public/health":
+			healthAuth = r.Header.Get("Authorization")
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"version": "test",
+				"status":  "OK",
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	t.Setenv("SEATRACES_PUBLIC_KEY", "pk-stale")
+	t.Setenv("SEA_TRACES_API_KEY", "sa-test")
+	t.Setenv("SEA_TRACES_BASE_URL", server.URL)
+	t.Setenv("SEA_TRACES_PROJECT_ID", "project-123")
+
+	client, err := NewClientFromEnv(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, client)
+
+	_, err = client.Health().Check(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "Basic "+base64.StdEncoding.EncodeToString([]byte("pk-resolved:sk-resolved")), healthAuth)
+}
+
+func TestNewClientWithConfig_MissingGatewayFieldErrors(t *testing.T) {
+	client, err := NewClientWithConfig(context.Background(), Config{
+		APIKey:  "sa-test",
+		BaseURL: "https://gateway.example.com",
+	})
+	require.ErrorIs(t, err, errMissingGatewayConfig)
+	require.Nil(t, client)
+}
+
+func TestNewClientWithConfig_ResolverFailureErrors(t *testing.T) {
+	clearSealangfuseCredentialsCacheForTest()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "nope", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	client, err := NewClientWithConfig(context.Background(), Config{
+		APIKey:    "sa-test",
+		BaseURL:   server.URL,
+		ProjectID: "project-123",
+	})
+	require.Error(t, err)
+	require.Nil(t, client)
+	require.Contains(t, err.Error(), "HTTP 401")
+}
+
+func TestNewClientWithConfig_ResolverMissingFieldErrors(t *testing.T) {
 	clearSealangfuseCredentialsCacheForTest()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{
-			"publicKey": "pk-lf-resolved",
-			"secretKey": "sk-lf-resolved",
+			"publicKey": "pk-resolved",
 			"baseUrl":   "https://resolver-response.example.com",
-			"status":    "INACTIVE",
 		})
 	}))
 	defer server.Close()
 
-	client, err := NewClientWithAPIKey(context.Background(), server.URL, "sa-test")
+	client, err := NewClientWithConfig(context.Background(), Config{
+		APIKey:    "sa-test",
+		BaseURL:   server.URL,
+		ProjectID: "project-123",
+	})
 	require.Error(t, err)
 	require.Nil(t, client)
+	require.Contains(t, err.Error(), "invalid Sea Traces credentials response")
 }
 
-func TestNewClientWithAPIKey_MasksResolverRequestURLOnNetworkError(t *testing.T) {
+func TestNewClientWithConfig_MasksResolverRequestURLOnNetworkError(t *testing.T) {
 	clearSealangfuseCredentialsCacheForTest()
 
-	client, err := NewClientWithAPIKey(
-		context.Background(),
-		"https://sea-traces.example.invalid",
-		"sa-super-secret-team-key",
-	)
+	client, err := NewClientWithConfig(context.Background(), Config{
+		APIKey:    "sa-super-secret-api-key",
+		BaseURL:   "https://sea-traces.example.invalid",
+		ProjectID: "project-123",
+	})
 	require.Error(t, err)
 	require.Nil(t, client)
 	require.Contains(t, err.Error(), "sa-sup...-key")
-	require.NotContains(t, err.Error(), "sa-super-secret-team-key")
-	require.NotContains(t, err.Error(), "?key=")
+	require.NotContains(t, err.Error(), "sa-super-secret-api-key")
+	require.NotContains(t, err.Error(), "secretKey")
 }
 
-func TestNewClientWithAPIKey_DeduplicatesConcurrentResolution(t *testing.T) {
+func TestNewClientWithConfig_MasksCredentialsURLQueryOnResolverError(t *testing.T) {
+	clearSealangfuseCredentialsCacheForTest()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "nope", http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	client, err := NewClientWithConfig(
+		context.Background(),
+		Config{
+			APIKey:    "sa-super-secret-api-key",
+			BaseURL:   "https://gateway.example.com",
+			ProjectID: "project-123",
+		},
+		WithCredentialsURL(server.URL+"/credentials?token=secret-token"),
+	)
+	require.Error(t, err)
+	require.Nil(t, client)
+	require.NotContains(t, err.Error(), "secret-token")
+	require.NotContains(t, err.Error(), "?token=")
+}
+
+func TestNewClientWithConfig_DeduplicatesConcurrentResolution(t *testing.T) {
 	clearSealangfuseCredentialsCacheForTest()
 
 	var resolverCalls int32
@@ -242,10 +403,9 @@ func TestNewClientWithAPIKey_DeduplicatesConcurrentResolution(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{
-			"publicKey": "pk-lf-resolved",
-			"secretKey": "sk-lf-resolved",
+			"publicKey": "pk-resolved",
+			"secretKey": "sk-resolved",
 			"baseUrl":   "https://resolver-response.example.com",
-			"status":    "ACTIVE",
 		})
 	}))
 	defer server.Close()
@@ -256,7 +416,11 @@ func TestNewClientWithAPIKey_DeduplicatesConcurrentResolution(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := NewClientWithAPIKey(context.Background(), server.URL, "sa-test")
+			_, err := NewClientWithConfig(context.Background(), Config{
+				APIKey:    "sa-test",
+				BaseURL:   server.URL,
+				ProjectID: "project-123",
+			})
 			errs <- err
 		}()
 	}
@@ -269,44 +433,48 @@ func TestNewClientWithAPIKey_DeduplicatesConcurrentResolution(t *testing.T) {
 	require.Equal(t, int32(1), atomic.LoadInt32(&resolverCalls))
 }
 
-func TestNewClientFromEnv(t *testing.T) {
+func TestNewClientFromEnv_GatewayEnv(t *testing.T) {
 	clearSealangfuseCredentialsCacheForTest()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/api/public/sea-project-api-credentials", r.URL.Path)
-		require.Equal(t, "sea-team-env", r.URL.Query().Get("key"))
+		require.Equal(t, "/hub/sea-traces-api-key", r.URL.Path)
+		var body map[string]string
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		require.Equal(t, "sa-env", body["api_key"])
+		require.Equal(t, "project-env", body["project_id"])
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{
-			"publicKey": "pk-lf-env",
-			"secretKey": "sk-lf-env",
+			"publicKey": "pk-env",
+			"secretKey": "sk-env",
 			"baseUrl":   "https://resolver-response.example.com",
-			"status":    "ACTIVE",
 		})
 	}))
 	defer server.Close()
 
-	t.Setenv("SEA_TEAM_KEY", "sea-team-env")
 	t.Setenv("SEA_TRACES_BASE_URL", server.URL)
+	t.Setenv("SEA_TRACES_API_KEY", "sa-env")
+	t.Setenv("SEA_TRACES_PROJECT_ID", "project-env")
 
 	client, err := NewClientFromEnv(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, client)
+	require.Equal(t, "https://resolver-response.example.com/api/public", client.restyCli.BaseURL)
 }
 
-func TestNewClientFromEnv_IgnoresLegacyEnv(t *testing.T) {
+func TestNewClientFromEnv_LegacyDirectEnvFallback(t *testing.T) {
 	clearSealangfuseCredentialsCacheForTest()
 
-	t.Setenv("SEALANGFUSE_API_KEY", "sa-legacy")
+	t.Setenv("LANGFUSE_PUBLIC_KEY", "pk-legacy")
+	t.Setenv("LANGFUSE_SECRET_KEY", "sk-legacy")
 	t.Setenv("LANGFUSE_BASE_URL", "https://legacy.example.com")
 
 	client, err := NewClientFromEnv(context.Background())
-	require.ErrorIs(t, err, errMissingBaseURL)
-	require.Nil(t, client)
+	require.NoError(t, err)
+	require.NotNil(t, client)
+	require.Equal(t, "https://legacy.example.com/api/public", client.restyCli.BaseURL)
 }
 
 func TestTrace(t *testing.T) {
-	setRequiredSeaTracesEnv(t)
-
 	// Use test environment configuration instead of real environment sensitive information
 	client := NewClient("http://localhost:3000", "test-public-key", "test-secret-key")
 

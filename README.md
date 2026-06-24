@@ -1,6 +1,6 @@
 # Sea Traces Go SDK
 
-Sea Traces 的 Go 客户端和 SDK。SDK 对外使用 Sea Traces 模块命名，并要求通过 team key 完成鉴权。
+Sea Traces 的 Go 客户端和 SDK。SDK 对外使用 Sea Traces 模块命名，支持内部直传凭证和外部网关凭证两种认证模式。
 
 ## 安装
 
@@ -12,22 +12,29 @@ go get github.com/SeaArt-Infra/sea-traces-sdk-go
 
 ## 配置
 
-Sea Traces Go SDK 使用 team key 和 Sea Traces base URL 初始化。正常使用时，用户不需要直接传项目 public key 和 secret key。SDK 会先解析一次项目凭证，然后使用解析后的凭证完成上报和 API 请求。
-
-初始化时必须提供以下两个配置：
+Sea Traces Go SDK 支持两种配置。内部用户已经持有上传凭证时，直接配置：
 
 ```bash
-export SEA_TEAM_KEY="sea-team-key"
-export SEA_TRACES_BASE_URL="https://your-sea-traces.example.com"
+export SEATRACES_PUBLIC_KEY="pk-..."
+export SEATRACES_SECRET_KEY="sk-..."
+export SEATRACES_BASE_URL="https://your-upload.example.com"
+```
+
+外部用户使用网关凭证初始化，SDK 会先解析一次上传凭证，再复用相同的上报和 API pipeline：
+
+```bash
+export SEA_TRACES_API_KEY="sea-traces-api-key"
+export SEA_TRACES_BASE_URL="https://your-gateway.example.com"
+export SEA_TRACES_PROJECT_ID="project-id"
 ```
 
 默认的凭证解析请求为：
 
 ```text
-GET {SEA_TRACES_BASE_URL}/api/public/sea-project-api-credentials?key={SEA_TEAM_KEY}
+POST {SEA_TRACES_BASE_URL}/hub/sea-traces-api-key
 ```
 
-必须配置 `SEA_TEAM_KEY` 和 `SEA_TRACES_BASE_URL`，只配置其他历史环境变量不会启用 Sea Traces SDK。
+如果直传配置不完整，SDK 才会进入网关模式。网关解析返回的 `publicKey`、`secretKey` 和 `baseUrl` 会完整覆盖最终上传凭证，避免混用旧环境变量。
 
 ## 使用方式
 
@@ -62,30 +69,40 @@ func main() {
 也可以显式传入配置：
 
 ```go
-client, err := seatraces.NewClientWithAPIKey(
+client, err := seatraces.NewClientWithConfig(
     ctx,
-    "https://your-sea-traces.example.com",
-    "sea-team-key",
+    seatraces.Config{
+        APIKey:    "sea-traces-api-key",
+        BaseURL:   "https://your-gateway.example.com",
+        ProjectID: "project-id",
+    },
 )
 ```
 
 如果需要覆盖凭证解析地址：
 
 ```go
-client, err := seatraces.NewClientWithAPIKey(
+client, err := seatraces.NewClientWithConfig(
     ctx,
-    "https://your-sea-traces.example.com",
-    "sea-team-key",
+    seatraces.Config{
+        APIKey:    "sea-traces-api-key",
+        BaseURL:   "https://your-gateway.example.com",
+        ProjectID: "project-id",
+    },
     seatraces.WithCredentialsURL(
-        "https://your-sea-traces.example.com/api/public/sea-project-api-credentials",
+        "https://your-gateway.example.com/hub/sea-traces-api-key",
     ),
 )
 ```
 
 `NewClientFromEnv` 会读取：
 
-- `SEA_TEAM_KEY`
+- `SEATRACES_PUBLIC_KEY`
+- `SEATRACES_SECRET_KEY`
+- `SEATRACES_BASE_URL`
+- `SEA_TRACES_API_KEY`
 - `SEA_TRACES_BASE_URL`
+- `SEA_TRACES_PROJECT_ID`
 
 ## 上报模型
 
@@ -169,7 +186,7 @@ client.Flush()
 
 ## 安全
 
-不要提交 `SEA_TEAM_KEY` 或 `.env` 文件。不要在日志中打印完整 team key、解析后的 `secretKey` 或原始凭证响应。
+不要提交 `.env` 文件。不要在日志中打印完整 `SEA_TRACES_API_KEY`、`SEATRACES_SECRET_KEY`、解析后的 `secretKey` 或原始凭证响应。
 
 ## 开发
 

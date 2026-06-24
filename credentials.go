@@ -1,6 +1,7 @@
 package langfuse
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,67 +14,95 @@ import (
 )
 
 const (
-	envSeaTeamKey             = "SEA_TEAM_KEY"
-	envSeaTracesBaseURL       = "SEA_TRACES_BASE_URL"
-	envSealangfuseCredentials = "SEALANGFUSE_CREDENTIALS_URL"
+	envSeaTracesPublicKey = "SEATRACES_PUBLIC_KEY"
+	envSeaTracesSecretKey = "SEATRACES_SECRET_KEY"
+	envSeaTracesBaseURL   = "SEATRACES_BASE_URL"
+	envSeaTracesAPIKey    = "SEA_TRACES_API_KEY"
+	envSeaTracesGateway   = "SEA_TRACES_BASE_URL"
+	envSeaTracesProjectID = "SEA_TRACES_PROJECT_ID"
+
+	envLegacyLangfusePublicKey = "LANGFUSE_PUBLIC_KEY"
+	envLegacyLangfuseSecretKey = "LANGFUSE_SECRET_KEY"
+	envLegacyLangfuseBaseURL   = "LANGFUSE_BASE_URL"
 )
 
 var (
-	errMissingBaseURL = errors.New("SEA_TRACES_BASE_URL is required")
-	errMissingAPIKey  = errors.New("SEA_TEAM_KEY is required")
+	errMissingDirectConfig  = errors.New("SEATRACES_PUBLIC_KEY, SEATRACES_SECRET_KEY, and SEATRACES_BASE_URL are required for direct upload")
+	errMissingGatewayConfig = errors.New("SEA_TRACES_API_KEY, SEA_TRACES_BASE_URL, and SEA_TRACES_PROJECT_ID are required for gateway auth")
 )
 
-type sealangfuseCredentials struct {
+type seaTracesCredentials struct {
 	PublicKey string `json:"publicKey"`
 	SecretKey string `json:"secretKey"`
 	BaseURL   string `json:"baseUrl"`
-	Status    string `json:"status"`
 }
 
-type resolveSealangfuseCredentialsParams struct {
+type resolveSeaTracesCredentialsParams struct {
 	apiKey         string
 	baseURL        string
+	projectID      string
 	credentialsURL string
 	httpClient     *http.Client
 }
 
 type credentialsCall struct {
 	done        chan struct{}
-	credentials sealangfuseCredentials
+	credentials seaTracesCredentials
 	err         error
 }
 
 var credentialsResolverCache = struct {
 	sync.Mutex
-	values   map[string]sealangfuseCredentials
+	values   map[string]seaTracesCredentials
 	inflight map[string]*credentialsCall
 }{
-	values:   make(map[string]sealangfuseCredentials),
+	values:   make(map[string]seaTracesCredentials),
 	inflight: make(map[string]*credentialsCall),
 }
 
-func getSeaTeamKeyEnv() string {
-	return strings.TrimSpace(os.Getenv(envSeaTeamKey))
+func getSeaTracesPublicKeyEnv() string {
+	return strings.TrimSpace(os.Getenv(envSeaTracesPublicKey))
+}
+
+func getSeaTracesSecretKeyEnv() string {
+	return strings.TrimSpace(os.Getenv(envSeaTracesSecretKey))
 }
 
 func getSeaTracesBaseURLEnv() string {
 	return strings.TrimSpace(os.Getenv(envSeaTracesBaseURL))
 }
 
-func getSealangfuseCredentialsURL(baseURL string, explicitCredentialsURL string) string {
-	if explicitCredentialsURL != "" {
-		return explicitCredentialsURL
-	}
-	if value := os.Getenv(envSealangfuseCredentials); value != "" {
-		return value
-	}
-
-	return strings.TrimRight(baseURL, "/") + "/api/public/sea-project-api-credentials"
+func getSeaTracesAPIKeyEnv() string {
+	return strings.TrimSpace(os.Getenv(envSeaTracesAPIKey))
 }
 
-func resolveSealangfuseCredentials(ctx context.Context, params resolveSealangfuseCredentialsParams) (sealangfuseCredentials, error) {
-	credentialsURL := getSealangfuseCredentialsURL(params.baseURL, params.credentialsURL)
-	cacheKey := credentialsURL + "\n" + params.apiKey
+func getSeaTracesGatewayBaseURLEnv() string {
+	return strings.TrimSpace(os.Getenv(envSeaTracesGateway))
+}
+
+func getSeaTracesProjectIDEnv() string {
+	return strings.TrimSpace(os.Getenv(envSeaTracesProjectID))
+}
+
+func legacyDirectConfigFromEnv() Config {
+	return Config{
+		PublicKey: strings.TrimSpace(os.Getenv(envLegacyLangfusePublicKey)),
+		SecretKey: strings.TrimSpace(os.Getenv(envLegacyLangfuseSecretKey)),
+		BaseURL:   strings.TrimSpace(os.Getenv(envLegacyLangfuseBaseURL)),
+	}
+}
+
+func getSeaTracesCredentialsURL(baseURL string, explicitCredentialsURL string) string {
+	if explicitCredentialsURL != "" {
+		return strings.TrimSpace(explicitCredentialsURL)
+	}
+
+	return strings.TrimRight(baseURL, "/") + "/hub/sea-traces-api-key"
+}
+
+func resolveSeaTracesCredentials(ctx context.Context, params resolveSeaTracesCredentialsParams) (seaTracesCredentials, error) {
+	credentialsURL := getSeaTracesCredentialsURL(params.baseURL, params.credentialsURL)
+	cacheKey := credentialsURL + "\n" + params.apiKey + "\n" + params.projectID
 
 	credentialsResolverCache.Lock()
 	if credentials, ok := credentialsResolverCache.values[cacheKey]; ok {
@@ -90,7 +119,7 @@ func resolveSealangfuseCredentials(ctx context.Context, params resolveSealangfus
 	credentialsResolverCache.inflight[cacheKey] = call
 	credentialsResolverCache.Unlock()
 
-	call.credentials, call.err = fetchSealangfuseCredentials(ctx, params, credentialsURL)
+	call.credentials, call.err = fetchSeaTracesCredentials(ctx, params, credentialsURL)
 
 	credentialsResolverCache.Lock()
 	if call.err == nil {
@@ -103,20 +132,26 @@ func resolveSealangfuseCredentials(ctx context.Context, params resolveSealangfus
 	return call.credentials, call.err
 }
 
-func fetchSealangfuseCredentials(ctx context.Context, params resolveSealangfuseCredentialsParams, credentialsURL string) (sealangfuseCredentials, error) {
-	parsedURL, err := url.Parse(credentialsURL)
-	if err != nil {
-		return sealangfuseCredentials{}, fmt.Errorf("invalid Sealangfuse credentials URL %q: %w", credentialsURL, err)
+func fetchSeaTracesCredentials(ctx context.Context, params resolveSeaTracesCredentialsParams, credentialsURL string) (seaTracesCredentials, error) {
+	if _, err := url.ParseRequestURI(credentialsURL); err != nil {
+		return seaTracesCredentials{}, fmt.Errorf("invalid Sea Traces credentials URL %q: %w", maskSeaTracesCredentialsURL(credentialsURL), err)
 	}
 
-	query := parsedURL.Query()
-	query.Set("key", params.apiKey)
-	parsedURL.RawQuery = query.Encode()
-
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, parsedURL.String(), nil)
+	body, err := json.Marshal(map[string]string{
+		"api_key":    params.apiKey,
+		"base_url":   params.baseURL,
+		"project_id": params.projectID,
+	})
 	if err != nil {
-		return sealangfuseCredentials{}, fmt.Errorf("create Sealangfuse credentials request: %w", err)
+		return seaTracesCredentials{}, fmt.Errorf("encode Sea Traces credentials request: %w", err)
 	}
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, credentialsURL, bytes.NewReader(body))
+	if err != nil {
+		return seaTracesCredentials{}, fmt.Errorf("create Sea Traces credentials request: %w", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
 
 	httpClient := params.httpClient
 	if httpClient == nil {
@@ -125,41 +160,44 @@ func fetchSealangfuseCredentials(ctx context.Context, params resolveSealangfuseC
 
 	response, err := httpClient.Do(request)
 	if err != nil {
-		return sealangfuseCredentials{}, fmt.Errorf(
-			"resolve Sealangfuse credentials from %s for key %s: %v",
-			credentialsURL,
-			maskSealangfuseAPIKey(params.apiKey),
-			maskSealangfuseRequestError(err),
+		return seaTracesCredentials{}, fmt.Errorf(
+			"resolve Sea Traces credentials from %s for key %s: %v",
+			maskSeaTracesCredentialsURL(credentialsURL),
+			maskSeaTracesAPIKey(params.apiKey),
+			maskSeaTracesRequestError(err),
 		)
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return sealangfuseCredentials{}, fmt.Errorf(
-			"resolve Sealangfuse credentials from %s for key %s: HTTP %d",
-			credentialsURL,
-			maskSealangfuseAPIKey(params.apiKey),
+		return seaTracesCredentials{}, fmt.Errorf(
+			"resolve Sea Traces credentials from %s for key %s: HTTP %d",
+			maskSeaTracesCredentialsURL(credentialsURL),
+			maskSeaTracesAPIKey(params.apiKey),
 			response.StatusCode,
 		)
 	}
 
-	var credentials sealangfuseCredentials
+	var credentials seaTracesCredentials
 	if err := json.NewDecoder(response.Body).Decode(&credentials); err != nil {
-		return sealangfuseCredentials{}, fmt.Errorf("decode Sealangfuse credentials response: %w", err)
+		return seaTracesCredentials{}, fmt.Errorf("decode Sea Traces credentials response: %w", err)
 	}
 
-	if credentials.Status != "ACTIVE" || credentials.PublicKey == "" || credentials.SecretKey == "" || credentials.BaseURL == "" {
-		return sealangfuseCredentials{}, fmt.Errorf(
-			"invalid Sealangfuse credentials response from %s for key %s",
-			credentialsURL,
-			maskSealangfuseAPIKey(params.apiKey),
+	if strings.TrimSpace(credentials.PublicKey) == "" || strings.TrimSpace(credentials.SecretKey) == "" || strings.TrimSpace(credentials.BaseURL) == "" {
+		return seaTracesCredentials{}, fmt.Errorf(
+			"invalid Sea Traces credentials response from %s for key %s",
+			maskSeaTracesCredentialsURL(credentialsURL),
+			maskSeaTracesAPIKey(params.apiKey),
 		)
 	}
 
+	credentials.PublicKey = strings.TrimSpace(credentials.PublicKey)
+	credentials.SecretKey = strings.TrimSpace(credentials.SecretKey)
+	credentials.BaseURL = strings.TrimSpace(credentials.BaseURL)
 	return credentials, nil
 }
 
-func maskSealangfuseAPIKey(apiKey string) string {
+func maskSeaTracesAPIKey(apiKey string) string {
 	if len(apiKey) <= 10 {
 		return "<masked>"
 	}
@@ -167,7 +205,7 @@ func maskSealangfuseAPIKey(apiKey string) string {
 	return apiKey[:6] + "..." + apiKey[len(apiKey)-4:]
 }
 
-func maskSealangfuseRequestError(err error) error {
+func maskSeaTracesRequestError(err error) error {
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) {
 		masked := *urlErr
@@ -181,10 +219,21 @@ func maskSealangfuseRequestError(err error) error {
 	return err
 }
 
+func maskSeaTracesCredentialsURL(credentialsURL string) string {
+	parsedURL, err := url.Parse(credentialsURL)
+	if err != nil {
+		return credentialsURL
+	}
+	parsedURL.User = nil
+	parsedURL.RawQuery = ""
+	parsedURL.Fragment = ""
+	return parsedURL.String()
+}
+
 func clearSealangfuseCredentialsCacheForTest() {
 	credentialsResolverCache.Lock()
 	defer credentialsResolverCache.Unlock()
 
-	credentialsResolverCache.values = make(map[string]sealangfuseCredentials)
+	credentialsResolverCache.values = make(map[string]seaTracesCredentials)
 	credentialsResolverCache.inflight = make(map[string]*credentialsCall)
 }

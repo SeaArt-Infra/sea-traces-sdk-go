@@ -1,103 +1,89 @@
 # Sea Traces Go SDK Auth Guide
 
-The Sea Traces Go SDK uses a team key plus a Sea Traces base URL. Users do not pass Langfuse public and secret keys directly for normal SDK initialization. The SDK resolves project credentials once, then reuses the existing Langfuse ingestion/API pipeline internally.
+The Sea Traces Go SDK supports two authentication modes without exposing Langfuse naming to users.
 
-## Required configuration
+## Direct Upload
+
+Internal users who already have upload credentials can configure the SDK directly:
 
 ```bash
-export SEA_TEAM_KEY="sea-team-key"
-export SEA_TRACES_BASE_URL="https://sea-traces.example.com"
+export SEATRACES_PUBLIC_KEY="pk-..."
+export SEATRACES_SECRET_KEY="sk-..."
+export SEATRACES_BASE_URL="https://sea-traces-upload.example.com"
 ```
 
-Optional resolver override:
+Equivalent constructor config:
+
+```go
+client, err := seatraces.NewClientWithConfig(ctx, seatraces.Config{
+    PublicKey: "pk-...",
+    SecretKey: "sk-...",
+    BaseURL:   "https://sea-traces-upload.example.com",
+})
+```
+
+## Gateway Auth
+
+External users provide gateway credentials. The SDK resolves upload credentials once and then uses the same upload pipeline as direct mode.
 
 ```bash
-export SEALANGFUSE_CREDENTIALS_URL="https://sea-traces.example.com/api/public/sea-project-api-credentials"
+export SEA_TRACES_API_KEY="sea-traces-api-key"
+export SEA_TRACES_BASE_URL="https://sea-traces-gateway.example.com"
+export SEA_TRACES_PROJECT_ID="project-id"
+```
+
+Equivalent constructor config:
+
+```go
+client, err := seatraces.NewClientWithConfig(ctx, seatraces.Config{
+    APIKey:    "sea-traces-api-key",
+    BaseURL:   "https://sea-traces-gateway.example.com",
+    ProjectID: "project-id",
+})
 ```
 
 The default resolver request is:
 
 ```text
-GET {SEA_TRACES_BASE_URL}/api/public/sea-project-api-credentials?key={SEA_TEAM_KEY}
+POST {SEA_TRACES_BASE_URL}/hub/sea-traces-api-key
 ```
 
-`SEALANGFUSE_API_KEY`, `LANGFUSE_BASE_URL`, and default Langfuse Cloud values do not enable the renamed SDK by themselves.
+Request body:
 
-## Environment-based initialization
-
-```go
-package main
-
-import (
-    "context"
-    "log"
-
-    seatraces "github.com/SeaArt-Infra/sea-traces-sdk-go"
-)
-
-func main() {
-    ctx := context.Background()
-
-    client, err := seatraces.NewClientFromEnv(ctx)
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer client.Close()
-
-    trace := client.StartTrace(ctx, "go-sdk-demo")
-    span := trace.StartSpan("local-work")
-    span.End()
-    trace.End()
-
-    client.Flush()
+```json
+{
+  "api_key": "sea-traces-api-key",
+  "base_url": "https://sea-traces-gateway.example.com",
+  "project_id": "project-id"
 }
 ```
 
-`NewClientFromEnv` reads:
+Expected response:
 
-- `SEA_TEAM_KEY`
-- `SEA_TRACES_BASE_URL`
-- optional `SEALANGFUSE_CREDENTIALS_URL`
-
-## Explicit initialization
-
-```go
-client, err := seatraces.NewClientWithAPIKey(
-    ctx,
-    "https://sea-traces.example.com",
-    "sea-team-key",
-)
+```json
+{
+  "publicKey": "pk-...",
+  "secretKey": "sk-...",
+  "baseUrl": "https://sea-traces-upload.example.com"
+}
 ```
 
-If the resolver endpoint must be overridden:
+## Precedence
 
-```go
-client, err := seatraces.NewClientWithAPIKey(
-    ctx,
-    "https://sea-traces.example.com",
-    "sea-team-key",
-    seatraces.WithCredentialsURL(
-        "https://sea-traces.example.com/api/public/sea-project-api-credentials",
-    ),
-)
-```
+`NewClientFromEnv` uses this order:
 
-## Internal flow
+1. Complete direct env config: `SEATRACES_PUBLIC_KEY`, `SEATRACES_SECRET_KEY`, `SEATRACES_BASE_URL`.
+2. Complete gateway env config: `SEA_TRACES_API_KEY`, `SEA_TRACES_BASE_URL`, `SEA_TRACES_PROJECT_ID`.
+3. Complete legacy direct env fallback, if present.
 
-1. Read `apiKey` or `SEA_TEAM_KEY`.
-2. Read `host` or `SEA_TRACES_BASE_URL`.
-3. Return an error if either value is missing or blank.
-4. Resolve credentials from `{host}/api/public/sea-project-api-credentials`, unless `WithCredentialsURL` or `SEALANGFUSE_CREDENTIALS_URL` overrides it.
-5. Require `status == "ACTIVE"` and non-empty `publicKey`, `secretKey`, and `baseUrl`.
-6. Configure the existing resty clients with the resolved public/secret keys.
-7. Keep the user-provided `host` as the final API and ingestion base URL.
+`NewClientWithConfig` gives complete direct constructor config precedence over gateway constructor config.
 
-The resolver response `baseUrl` is validated but does not override the user-provided Sea Traces base URL.
+Incomplete direct credentials do not partially override gateway-resolved credentials. In gateway mode, the resolver response becomes the final upload credentials and base URL.
 
-## Cache and concurrency
+## Cache and Concurrency
 
-Credential resolution is cached in-process by `(team_key, credentials_url)`. Concurrent callers for the same cache key share one in-flight resolver request.
+Credential resolution is cached in-process by `(api_key, project_id, credentials_url)`. Concurrent callers for the same cache key share one in-flight resolver request.
 
 ## Safety
 
-Do not commit `SEA_TEAM_KEY` or `.env` files. Do not log full team keys, resolved `secretKey`, or raw credential responses.
+Do not commit `.env` files. Do not log full gateway API keys, upload secret keys, resolved credentials, or raw credential responses.
