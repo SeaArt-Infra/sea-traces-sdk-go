@@ -1451,11 +1451,12 @@ func main() {
 	hasDirectConfig := os.Getenv("SEATRACES_PUBLIC_KEY") != "" &&
 		os.Getenv("SEATRACES_SECRET_KEY") != "" &&
 		os.Getenv("SEATRACES_BASE_URL") != ""
+	hasProjectConfig := os.Getenv("SEATRACES_PROJECT_ID") != "" &&
+		os.Getenv("SEATRACES_BASE_URL") != ""
 	hasGatewayConfig := os.Getenv("SEA_TRACES_API_KEY") != "" &&
-		os.Getenv("SEA_TRACES_BASE_URL") != "" &&
-		os.Getenv("SEA_TRACES_PROJECT_ID") != ""
-	if !hasDirectConfig && !hasGatewayConfig {
-		fmt.Println("Set either SEATRACES_PUBLIC_KEY/SEATRACES_SECRET_KEY/SEATRACES_BASE_URL or SEA_TRACES_API_KEY/SEA_TRACES_BASE_URL/SEA_TRACES_PROJECT_ID")
+		os.Getenv("SEA_TRACES_BASE_URL") != ""
+	if !hasDirectConfig && !hasProjectConfig && !hasGatewayConfig {
+		fmt.Println("Set SEATRACES_PROJECT_ID/SEATRACES_BASE_URL or SEA_TRACES_API_KEY/SEA_TRACES_BASE_URL")
 		return
 	}
 

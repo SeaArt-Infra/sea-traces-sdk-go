@@ -141,19 +141,22 @@ func NewClientWithConfig(ctx context.Context, config Config, options ...ClientOp
 		return newClientWithCredentials(config.BaseURL, config.PublicKey, config.SecretKey, options...), nil
 	}
 
-	if !isGatewayConfigComplete(config) {
-		return nil, missingConfigError(config)
-	}
-
 	clientConfig := &clientConfig{}
 	for _, option := range options {
 		option(clientConfig)
 	}
 
+	if config.APIKey == "" && isProjectConfigComplete(config) {
+		return newClientWithProject(config.BaseURL, config.ProjectID, options...), nil
+	}
+
+	if !isGatewayConfigComplete(config) {
+		return nil, missingConfigError(config)
+	}
+
 	credentials, err := resolveSeaTracesCredentials(ctx, resolveSeaTracesCredentialsParams{
 		apiKey:         config.APIKey,
 		baseURL:        config.BaseURL,
-		projectID:      config.ProjectID,
 		credentialsURL: clientConfig.credentialsURL,
 		httpClient:     clientConfig.httpClient,
 	})
@@ -161,18 +164,17 @@ func NewClientWithConfig(ctx context.Context, config Config, options ...ClientOp
 		return nil, err
 	}
 
-	return newClientWithCredentials(credentials.BaseURL, credentials.PublicKey, credentials.SecretKey, options...), nil
+	return newClientWithProject(credentials.BaseURL, credentials.ProjectID, options...), nil
 }
 
 // NewClientWithAPIKey creates a new Sea Traces client by resolving project
-// upload credentials from gateway auth settings.
+// project upload settings from gateway auth settings.
 //
-// Deprecated: use NewClientWithConfig with APIKey, BaseURL, and ProjectID.
+// Deprecated: use NewClientWithConfig with APIKey and BaseURL.
 func NewClientWithAPIKey(ctx context.Context, host string, apiKey string, options ...ClientOption) (*Langfuse, error) {
 	return NewClientWithConfig(ctx, Config{
-		APIKey:    apiKey,
-		BaseURL:   host,
-		ProjectID: getSeaTracesProjectIDEnv(),
+		APIKey:  apiKey,
+		BaseURL: host,
 	}, options...)
 }
 
@@ -188,9 +190,16 @@ func NewClientFromEnv(ctx context.Context, options ...ClientOption) (*Langfuse, 
 	}
 
 	config = Config{
-		APIKey:    getSeaTracesAPIKeyEnv(),
-		BaseURL:   getSeaTracesGatewayBaseURLEnv(),
 		ProjectID: getSeaTracesProjectIDEnv(),
+		BaseURL:   getSeaTracesBaseURLEnv(),
+	}
+	if isProjectConfigComplete(config) {
+		return NewClientWithConfig(ctx, config, options...)
+	}
+
+	config = Config{
+		APIKey:  getSeaTracesAPIKeyEnv(),
+		BaseURL: getSeaTracesGatewayBaseURLEnv(),
 	}
 	if isGatewayConfigComplete(config) {
 		return NewClientWithConfig(ctx, config, options...)
@@ -224,12 +233,19 @@ func isDirectConfigComplete(config Config) bool {
 }
 
 func isGatewayConfigComplete(config Config) bool {
-	return config.APIKey != "" && config.BaseURL != "" && config.ProjectID != ""
+	return config.APIKey != "" && config.BaseURL != ""
+}
+
+func isProjectConfigComplete(config Config) bool {
+	return config.ProjectID != "" && config.BaseURL != ""
 }
 
 func missingConfigError(config Config) error {
-	if config.APIKey != "" || config.ProjectID != "" || (config.BaseURL != "" && config.PublicKey == "" && config.SecretKey == "") {
+	if config.APIKey != "" {
 		return errMissingGatewayConfig
+	}
+	if config.ProjectID != "" || (config.BaseURL != "" && config.PublicKey == "" && config.SecretKey == "") {
+		return errMissingProjectConfig
 	}
 	return errMissingDirectConfig
 }
@@ -244,6 +260,14 @@ func firstNonEmpty(values ...string) string {
 }
 
 func newClientWithCredentials(host string, publicKey string, secretKey string, options ...ClientOption) *Langfuse {
+	return newClient(host, publicKey, secretKey, "", options...)
+}
+
+func newClientWithProject(host string, projectID string, options ...ClientOption) *Langfuse {
+	return newClient(host, "", "", projectID, options...)
+}
+
+func newClient(host string, publicKey string, secretKey string, projectID string, options ...ClientOption) *Langfuse {
 	config := &clientConfig{}
 	for _, option := range options {
 		option(config)
@@ -256,11 +280,13 @@ func newClientWithCredentials(host string, publicKey string, secretKey string, o
 		restyCli = resty.New()
 	}
 
-	restyCli.SetBaseURL(host+"/api/public").
-		SetBasicAuth(publicKey, secretKey)
+	restyCli.SetBaseURL(strings.TrimRight(host, "/") + "/api/public")
+	if publicKey != "" || secretKey != "" {
+		restyCli.SetBasicAuth(publicKey, secretKey)
+	}
 
 	return &Langfuse{
-		ingestor:      traces.NewIngestor(restyCli),
+		ingestor:      traces.NewIngestorWithProjectID(restyCli, projectID),
 		prompt:        prompts.NewClient(restyCli),
 		model:         models.NewClient(restyCli),
 		project:       projects.NewClient(restyCli),

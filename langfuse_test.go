@@ -182,7 +182,6 @@ func TestNewClientWithConfig_GatewayConfigPostsResolverBody(t *testing.T) {
 	clearSealangfuseCredentialsCacheForTest()
 
 	var resolverCalls int32
-	var healthAuth string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/hub/sea-traces-api-key":
@@ -193,19 +192,17 @@ func TestNewClientWithConfig_GatewayConfigPostsResolverBody(t *testing.T) {
 			var body map[string]string
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 			require.Equal(t, map[string]string{
-				"api_key":    "sa-test",
-				"base_url":   serverURL(r),
-				"project_id": "project-123",
+				"api_key":  "sa-test",
+				"base_url": serverURL(r),
 			}, body)
 
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]string{
-				"publicKey": "pk-resolved",
-				"secretKey": "sk-resolved",
-				"baseUrl":   serverURL(r),
+				"project_id": "project-123",
+				"base_url":   serverURL(r),
 			})
 		case "/api/public/health":
-			healthAuth = r.Header.Get("Authorization")
+			require.Empty(t, r.Header.Get("Authorization"))
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]string{
 				"version": "test",
@@ -218,9 +215,8 @@ func TestNewClientWithConfig_GatewayConfigPostsResolverBody(t *testing.T) {
 	defer server.Close()
 
 	client, err := NewClientWithConfig(context.Background(), Config{
-		APIKey:    "sa-test",
-		BaseURL:   server.URL,
-		ProjectID: "project-123",
+		APIKey:  "sa-test",
+		BaseURL: server.URL,
 	})
 	require.NoError(t, err)
 	require.NotNil(t, client)
@@ -229,8 +225,39 @@ func TestNewClientWithConfig_GatewayConfigPostsResolverBody(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "OK", health.Status)
 	require.Equal(t, int32(1), atomic.LoadInt32(&resolverCalls))
-	require.Equal(t, "Basic "+base64.StdEncoding.EncodeToString([]byte("pk-resolved:sk-resolved")), healthAuth)
 	require.Equal(t, server.URL+"/api/public", client.restyCli.BaseURL)
+}
+
+func TestNewClientWithConfig_APIKeyTakesGatewayPathWhenProjectIDAlsoSet(t *testing.T) {
+	clearSealangfuseCredentialsCacheForTest()
+
+	var resolverCalls int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/hub/sea-traces-api-key", r.URL.Path)
+		atomic.AddInt32(&resolverCalls, 1)
+
+		var body map[string]string
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		require.Equal(t, "sa-test", body["api_key"])
+		require.Equal(t, serverURL(r), body["base_url"])
+		require.Empty(t, body["project_id"])
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"project_id": "project-from-gateway",
+			"base_url":   serverURL(r),
+		})
+	}))
+	defer server.Close()
+
+	client, err := NewClientWithConfig(context.Background(), Config{
+		APIKey:    "sa-test",
+		BaseURL:   server.URL,
+		ProjectID: "project-should-not-short-circuit",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, client)
+	require.Equal(t, int32(1), atomic.LoadInt32(&resolverCalls))
 }
 
 func TestNewClientWithConfig_UsesCredentialsURLOverride(t *testing.T) {
@@ -242,13 +269,12 @@ func TestNewClientWithConfig_UsesCredentialsURLOverride(t *testing.T) {
 		var body map[string]string
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 		require.Equal(t, "sa-test", body["api_key"])
-		require.Equal(t, "project-123", body["project_id"])
+		require.Empty(t, body["project_id"])
 
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{
-			"publicKey": "pk-override",
-			"secretKey": "sk-override",
-			"baseUrl":   "https://resolver-response.example.com",
+			"project_id": "project-override",
+			"base_url":   "https://resolver-response.example.com",
 		})
 	}))
 	defer resolver.Close()
@@ -256,9 +282,8 @@ func TestNewClientWithConfig_UsesCredentialsURLOverride(t *testing.T) {
 	client, err := NewClientWithConfig(
 		context.Background(),
 		Config{
-			APIKey:    "sa-test",
-			BaseURL:   "https://gateway.example.com",
-			ProjectID: "project-123",
+			APIKey:  "sa-test",
+			BaseURL: "https://gateway.example.com",
 		},
 		WithCredentialsURL(resolver.URL+"/credentials"),
 	)
@@ -270,18 +295,16 @@ func TestNewClientWithConfig_UsesCredentialsURLOverride(t *testing.T) {
 func TestNewClientFromEnv_IncompleteDirectEnvUsesGatewayResponseOnly(t *testing.T) {
 	clearSealangfuseCredentialsCacheForTest()
 
-	var healthAuth string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/hub/sea-traces-api-key":
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]string{
-				"publicKey": "pk-resolved",
-				"secretKey": "sk-resolved",
-				"baseUrl":   serverURL(r),
+				"project_id": "project-123",
+				"base_url":   serverURL(r),
 			})
 		case "/api/public/health":
-			healthAuth = r.Header.Get("Authorization")
+			require.Empty(t, r.Header.Get("Authorization"))
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]string{
 				"version": "test",
@@ -296,7 +319,6 @@ func TestNewClientFromEnv_IncompleteDirectEnvUsesGatewayResponseOnly(t *testing.
 	t.Setenv("SEATRACES_PUBLIC_KEY", "pk-stale")
 	t.Setenv("SEA_TRACES_API_KEY", "sa-test")
 	t.Setenv("SEA_TRACES_BASE_URL", server.URL)
-	t.Setenv("SEA_TRACES_PROJECT_ID", "project-123")
 
 	client, err := NewClientFromEnv(context.Background())
 	require.NoError(t, err)
@@ -304,15 +326,23 @@ func TestNewClientFromEnv_IncompleteDirectEnvUsesGatewayResponseOnly(t *testing.
 
 	_, err = client.Health().Check(context.Background())
 	require.NoError(t, err)
-	require.Equal(t, "Basic "+base64.StdEncoding.EncodeToString([]byte("pk-resolved:sk-resolved")), healthAuth)
 }
 
-func TestNewClientWithConfig_MissingGatewayFieldErrors(t *testing.T) {
+func TestNewClientWithConfig_ProjectConfigCreatesNoAuthClient(t *testing.T) {
 	client, err := NewClientWithConfig(context.Background(), Config{
-		APIKey:  "sa-test",
-		BaseURL: "https://gateway.example.com",
+		ProjectID: "project-123",
+		BaseURL:   "https://internal.example.com",
 	})
-	require.ErrorIs(t, err, errMissingGatewayConfig)
+	require.NoError(t, err)
+	require.NotNil(t, client)
+	require.Equal(t, "https://internal.example.com/api/public", client.restyCli.BaseURL)
+}
+
+func TestNewClientWithConfig_MissingProjectBaseURLErrors(t *testing.T) {
+	client, err := NewClientWithConfig(context.Background(), Config{
+		ProjectID: "project-123",
+	})
+	require.ErrorIs(t, err, errMissingProjectConfig)
 	require.Nil(t, client)
 }
 
@@ -325,9 +355,8 @@ func TestNewClientWithConfig_ResolverFailureErrors(t *testing.T) {
 	defer server.Close()
 
 	client, err := NewClientWithConfig(context.Background(), Config{
-		APIKey:    "sa-test",
-		BaseURL:   server.URL,
-		ProjectID: "project-123",
+		APIKey:  "sa-test",
+		BaseURL: server.URL,
 	})
 	require.Error(t, err)
 	require.Nil(t, client)
@@ -341,15 +370,14 @@ func TestNewClientWithConfig_ResolverMissingFieldErrors(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"publicKey": "pk-resolved",
-			"baseUrl":   "https://resolver-response.example.com",
+			"base_url":  "https://resolver-response.example.com",
 		})
 	}))
 	defer server.Close()
 
 	client, err := NewClientWithConfig(context.Background(), Config{
-		APIKey:    "sa-test",
-		BaseURL:   server.URL,
-		ProjectID: "project-123",
+		APIKey:  "sa-test",
+		BaseURL: server.URL,
 	})
 	require.Error(t, err)
 	require.Nil(t, client)
@@ -360,9 +388,8 @@ func TestNewClientWithConfig_MasksResolverRequestURLOnNetworkError(t *testing.T)
 	clearSealangfuseCredentialsCacheForTest()
 
 	client, err := NewClientWithConfig(context.Background(), Config{
-		APIKey:    "sa-super-secret-api-key",
-		BaseURL:   "https://sea-traces.example.invalid",
-		ProjectID: "project-123",
+		APIKey:  "sa-super-secret-api-key",
+		BaseURL: "https://sea-traces.example.invalid",
 	})
 	require.Error(t, err)
 	require.Nil(t, client)
@@ -382,9 +409,8 @@ func TestNewClientWithConfig_MasksCredentialsURLQueryOnResolverError(t *testing.
 	client, err := NewClientWithConfig(
 		context.Background(),
 		Config{
-			APIKey:    "sa-super-secret-api-key",
-			BaseURL:   "https://gateway.example.com",
-			ProjectID: "project-123",
+			APIKey:  "sa-super-secret-api-key",
+			BaseURL: "https://gateway.example.com",
 		},
 		WithCredentialsURL(server.URL+"/credentials?token=secret-token"),
 	)
@@ -403,9 +429,8 @@ func TestNewClientWithConfig_DeduplicatesConcurrentResolution(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{
-			"publicKey": "pk-resolved",
-			"secretKey": "sk-resolved",
-			"baseUrl":   "https://resolver-response.example.com",
+			"project_id": "project-123",
+			"base_url":   "https://resolver-response.example.com",
 		})
 	}))
 	defer server.Close()
@@ -417,9 +442,8 @@ func TestNewClientWithConfig_DeduplicatesConcurrentResolution(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			_, err := NewClientWithConfig(context.Background(), Config{
-				APIKey:    "sa-test",
-				BaseURL:   server.URL,
-				ProjectID: "project-123",
+				APIKey:  "sa-test",
+				BaseURL: server.URL,
 			})
 			errs <- err
 		}()
@@ -441,19 +465,17 @@ func TestNewClientFromEnv_GatewayEnv(t *testing.T) {
 		var body map[string]string
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
 		require.Equal(t, "sa-env", body["api_key"])
-		require.Equal(t, "project-env", body["project_id"])
+		require.Empty(t, body["project_id"])
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{
-			"publicKey": "pk-env",
-			"secretKey": "sk-env",
-			"baseUrl":   "https://resolver-response.example.com",
+			"project_id": "project-env",
+			"base_url":   "https://resolver-response.example.com",
 		})
 	}))
 	defer server.Close()
 
 	t.Setenv("SEA_TRACES_BASE_URL", server.URL)
 	t.Setenv("SEA_TRACES_API_KEY", "sa-env")
-	t.Setenv("SEA_TRACES_PROJECT_ID", "project-env")
 
 	client, err := NewClientFromEnv(context.Background())
 	require.NoError(t, err)

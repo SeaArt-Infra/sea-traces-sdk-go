@@ -19,22 +19,26 @@ const (
 	envSeaTracesBaseURL   = "SEATRACES_BASE_URL"
 	envSeaTracesAPIKey    = "SEA_TRACES_API_KEY"
 	envSeaTracesGateway   = "SEA_TRACES_BASE_URL"
-	envSeaTracesProjectID = "SEA_TRACES_PROJECT_ID"
+	envSeaTracesProjectID = "SEATRACES_PROJECT_ID"
 
-	envLegacyLangfusePublicKey = "LANGFUSE_PUBLIC_KEY"
-	envLegacyLangfuseSecretKey = "LANGFUSE_SECRET_KEY"
-	envLegacyLangfuseBaseURL   = "LANGFUSE_BASE_URL"
+	envLegacyLangfusePublicKey  = "LANGFUSE_PUBLIC_KEY"
+	envLegacyLangfuseSecretKey  = "LANGFUSE_SECRET_KEY"
+	envLegacyLangfuseBaseURL    = "LANGFUSE_BASE_URL"
+	envLegacySeaTracesProjectID = "SEA_TRACES_PROJECT_ID"
 )
 
 var (
 	errMissingDirectConfig  = errors.New("SEATRACES_PUBLIC_KEY, SEATRACES_SECRET_KEY, and SEATRACES_BASE_URL are required for direct upload")
-	errMissingGatewayConfig = errors.New("SEA_TRACES_API_KEY, SEA_TRACES_BASE_URL, and SEA_TRACES_PROJECT_ID are required for gateway auth")
+	errMissingProjectConfig = errors.New("SEATRACES_PROJECT_ID and SEATRACES_BASE_URL are required for internal noauth ingestion")
+	errMissingGatewayConfig = errors.New("SEA_TRACES_API_KEY and SEA_TRACES_BASE_URL are required for gateway auth")
 )
 
 type seaTracesCredentials struct {
 	PublicKey string `json:"publicKey"`
 	SecretKey string `json:"secretKey"`
 	BaseURL   string `json:"baseUrl"`
+	ProjectID string `json:"project_id"`
+	BaseURLV2 string `json:"base_url"`
 }
 
 type resolveSeaTracesCredentialsParams struct {
@@ -81,7 +85,10 @@ func getSeaTracesGatewayBaseURLEnv() string {
 }
 
 func getSeaTracesProjectIDEnv() string {
-	return strings.TrimSpace(os.Getenv(envSeaTracesProjectID))
+	return firstNonEmpty(
+		strings.TrimSpace(os.Getenv(envSeaTracesProjectID)),
+		strings.TrimSpace(os.Getenv(envLegacySeaTracesProjectID)),
+	)
 }
 
 func legacyDirectConfigFromEnv() Config {
@@ -102,7 +109,7 @@ func getSeaTracesCredentialsURL(baseURL string, explicitCredentialsURL string) s
 
 func resolveSeaTracesCredentials(ctx context.Context, params resolveSeaTracesCredentialsParams) (seaTracesCredentials, error) {
 	credentialsURL := getSeaTracesCredentialsURL(params.baseURL, params.credentialsURL)
-	cacheKey := credentialsURL + "\n" + params.apiKey + "\n" + params.projectID
+	cacheKey := credentialsURL + "\n" + params.apiKey
 
 	credentialsResolverCache.Lock()
 	if credentials, ok := credentialsResolverCache.values[cacheKey]; ok {
@@ -138,9 +145,8 @@ func fetchSeaTracesCredentials(ctx context.Context, params resolveSeaTracesCrede
 	}
 
 	body, err := json.Marshal(map[string]string{
-		"api_key":    params.apiKey,
-		"base_url":   params.baseURL,
-		"project_id": params.projectID,
+		"api_key":  params.apiKey,
+		"base_url": params.baseURL,
 	})
 	if err != nil {
 		return seaTracesCredentials{}, fmt.Errorf("encode Sea Traces credentials request: %w", err)
@@ -183,7 +189,10 @@ func fetchSeaTracesCredentials(ctx context.Context, params resolveSeaTracesCrede
 		return seaTracesCredentials{}, fmt.Errorf("decode Sea Traces credentials response: %w", err)
 	}
 
-	if strings.TrimSpace(credentials.PublicKey) == "" || strings.TrimSpace(credentials.SecretKey) == "" || strings.TrimSpace(credentials.BaseURL) == "" {
+	credentials.ProjectID = firstNonEmpty(strings.TrimSpace(credentials.ProjectID), strings.TrimSpace(params.projectID))
+	credentials.BaseURL = firstNonEmpty(strings.TrimSpace(credentials.BaseURLV2), strings.TrimSpace(credentials.BaseURL))
+
+	if strings.TrimSpace(credentials.ProjectID) == "" || strings.TrimSpace(credentials.BaseURL) == "" {
 		return seaTracesCredentials{}, fmt.Errorf(
 			"invalid Sea Traces credentials response from %s for key %s",
 			maskSeaTracesCredentialsURL(credentialsURL),
@@ -194,6 +203,7 @@ func fetchSeaTracesCredentials(ctx context.Context, params resolveSeaTracesCrede
 	credentials.PublicKey = strings.TrimSpace(credentials.PublicKey)
 	credentials.SecretKey = strings.TrimSpace(credentials.SecretKey)
 	credentials.BaseURL = strings.TrimSpace(credentials.BaseURL)
+	credentials.ProjectID = strings.TrimSpace(credentials.ProjectID)
 	return credentials, nil
 }
 

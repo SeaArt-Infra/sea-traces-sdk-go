@@ -2,6 +2,7 @@ package traces
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -261,4 +262,33 @@ func TestIngestor_Send(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIngestor_SendNoAuthWithProjectID(t *testing.T) {
+	var requestBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "POST", r.Method)
+		require.Equal(t, "/ingestion-noauth", r.URL.Path)
+		require.Empty(t, r.Header.Get("Authorization"))
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&requestBody))
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"successes":[{"id":"evt-1","status":201}],"errors":[]}`))
+	}))
+	defer server.Close()
+
+	client := resty.New().SetBaseURL(server.URL)
+	ingestor := NewIngestorWithProjectID(client, "project-123")
+
+	err := ingestor.Send(context.Background(), []*Trace{
+		{
+			TraceEntry: TraceEntry{
+				ID:        "trace-1",
+				Name:      "test-trace",
+				Timestamp: time.Now(),
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "project-123", requestBody["project_id"])
+	require.NotEmpty(t, requestBody["batch"])
 }

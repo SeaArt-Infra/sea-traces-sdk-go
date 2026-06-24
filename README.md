@@ -1,6 +1,6 @@
 # Sea Traces Go SDK
 
-Sea Traces 的 Go 客户端和 SDK。SDK 对外使用 Sea Traces 模块命名，支持内部直传凭证和外部网关凭证两种认证模式。
+Sea Traces 的 Go 客户端和 SDK。SDK 对外使用 Sea Traces 模块命名，支持内部项目直传和外部网关凭证两种初始化模式。
 
 ## 安装
 
@@ -12,20 +12,18 @@ go get github.com/SeaArt-Infra/sea-traces-sdk-go
 
 ## 配置
 
-Sea Traces Go SDK 支持两种配置。内部用户已经持有上传凭证时，直接配置：
+Sea Traces Go SDK 支持两种推荐配置。内部用户直接配置项目和上报地址：
 
 ```bash
-export SEATRACES_PUBLIC_KEY="pk-..."
-export SEATRACES_SECRET_KEY="sk-..."
+export SEATRACES_PROJECT_ID="project-id"
 export SEATRACES_BASE_URL="https://your-upload.example.com"
 ```
 
-外部用户使用网关凭证初始化，SDK 会先解析一次上传凭证，再复用相同的上报和 API pipeline：
+外部用户使用网关凭证初始化，SDK 会先解析一次项目信息，再走无鉴权上报接口：
 
 ```bash
 export SEA_TRACES_API_KEY="sea-traces-api-key"
 export SEA_TRACES_BASE_URL="https://your-gateway.example.com"
-export SEA_TRACES_PROJECT_ID="project-id"
 ```
 
 默认的凭证解析请求为：
@@ -34,7 +32,9 @@ export SEA_TRACES_PROJECT_ID="project-id"
 POST {SEA_TRACES_BASE_URL}/hub/sea-traces-api-key
 ```
 
-如果直传配置不完整，SDK 才会进入网关模式。网关解析返回的 `publicKey`、`secretKey` 和 `baseUrl` 会完整覆盖最终上传凭证，避免混用旧环境变量。
+请求体只包含 `api_key` 和 `base_url`。网关返回 `project_id` 和 `base_url` 后，trace 上报会发送到 `{base_url}/api/public/ingestion-noauth`，请求体包含 `project_id` 和 `batch`。
+
+旧的 `SEATRACES_PUBLIC_KEY`、`SEATRACES_SECRET_KEY`、`SEATRACES_BASE_URL` direct-basic-auth 配置仍保留兼容，但不再是推荐初始化方式。
 
 ## 使用方式
 
@@ -72,9 +72,8 @@ func main() {
 client, err := seatraces.NewClientWithConfig(
     ctx,
     seatraces.Config{
-        APIKey:    "sea-traces-api-key",
-        BaseURL:   "https://your-gateway.example.com",
-        ProjectID: "project-id",
+        APIKey:  "sea-traces-api-key",
+        BaseURL: "https://your-gateway.example.com",
     },
 )
 ```
@@ -85,9 +84,8 @@ client, err := seatraces.NewClientWithConfig(
 client, err := seatraces.NewClientWithConfig(
     ctx,
     seatraces.Config{
-        APIKey:    "sea-traces-api-key",
-        BaseURL:   "https://your-gateway.example.com",
-        ProjectID: "project-id",
+        APIKey:  "sea-traces-api-key",
+        BaseURL: "https://your-gateway.example.com",
     },
     seatraces.WithCredentialsURL(
         "https://your-gateway.example.com/hub/sea-traces-api-key",
@@ -99,10 +97,10 @@ client, err := seatraces.NewClientWithConfig(
 
 - `SEATRACES_PUBLIC_KEY`
 - `SEATRACES_SECRET_KEY`
+- `SEATRACES_PROJECT_ID`
 - `SEATRACES_BASE_URL`
 - `SEA_TRACES_API_KEY`
 - `SEA_TRACES_BASE_URL`
-- `SEA_TRACES_PROJECT_ID`
 
 ## 上报模型
 

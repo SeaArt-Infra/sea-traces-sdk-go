@@ -149,12 +149,18 @@ type Ingestor struct {
 	restyCli    *resty.Client
 	processor   *batch.Processor[*Trace]
 	idGenerator *IDGenerator
+	projectID   string
 }
 
 func NewIngestor(cli *resty.Client) *Ingestor {
+	return NewIngestorWithProjectID(cli, "")
+}
+
+func NewIngestorWithProjectID(cli *resty.Client, projectID string) *Ingestor {
 	collector := &Ingestor{
 		restyCli:    cli,
 		idGenerator: NewIDGenerator(),
+		projectID:   projectID,
 	}
 	collector.processor = batch.NewProcessor[*Trace](collector)
 	return collector
@@ -186,10 +192,17 @@ func (ingestor *Ingestor) Send(ctx context.Context, traces []*Trace) error {
 		return nil
 	}
 	events := ingestor.TracesToEvents(traces)
+	body := map[string]any{"batch": events}
+	path := "/ingestion"
+	if ingestor.projectID != "" {
+		body["project_id"] = ingestor.projectID
+		path = "/ingestion-noauth"
+	}
+
 	rsp, err := ingestor.restyCli.R().
 		SetContext(ctx).
-		SetBody(map[string]any{"batch": events}).
-		Post("/ingestion")
+		SetBody(body).
+		Post(path)
 	if err != nil {
 		return err
 	}
