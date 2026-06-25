@@ -40,6 +40,10 @@ const (
 	IngestionUpdateObservation = "observation-update"
 )
 
+const noauthIngestionSource = "noauth"
+const noauthIngestionSourceMetadataField = "ingestion_source"
+const noauthIngestionSourceBodyField = "ingestionSource"
+
 // ObservationType map to IngestionType
 // TODO: There is a problem with the design here. The necessity of ObservationType is not that great, and there is currently no more suitable solution for Update
 var typeMap = map[ObservationType]string{
@@ -187,6 +191,48 @@ func (ingestor *Ingestor) TracesToEvents(traces []*Trace) []IngestionEvent {
 	return events
 }
 
+type noauthIngestionBody struct {
+	value any
+}
+
+func (body noauthIngestionBody) MarshalJSON() ([]byte, error) {
+	payload, err := json.Marshal(body.value)
+	if err != nil {
+		return nil, err
+	}
+	if string(payload) == "null" {
+		return json.Marshal(map[string]string{
+			noauthIngestionSourceBodyField: noauthIngestionSource,
+		})
+	}
+
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &object); err != nil || object == nil {
+		return payload, nil
+	}
+
+	source, err := json.Marshal(noauthIngestionSource)
+	if err != nil {
+		return nil, err
+	}
+	object[noauthIngestionSourceBodyField] = source
+
+	return json.Marshal(object)
+}
+
+func withNoauthIngestionSource(events []IngestionEvent) []IngestionEvent {
+	markedEvents := make([]IngestionEvent, len(events))
+	copy(markedEvents, events)
+
+	for i := range markedEvents {
+		markedEvents[i].Body = noauthIngestionBody{
+			value: markedEvents[i].Body,
+		}
+	}
+
+	return markedEvents
+}
+
 func (ingestor *Ingestor) Send(ctx context.Context, traces []*Trace) error {
 	if len(traces) == 0 {
 		return nil
@@ -195,8 +241,13 @@ func (ingestor *Ingestor) Send(ctx context.Context, traces []*Trace) error {
 	body := map[string]any{"batch": events}
 	path := "/ingestion"
 	if ingestor.projectID != "" {
+		events = withNoauthIngestionSource(events)
 		body["project_id"] = ingestor.projectID
+		body["metadata"] = map[string]string{
+			noauthIngestionSourceMetadataField: noauthIngestionSource,
+		}
 		path = "/ingestion-noauth"
+		body["batch"] = events
 	}
 
 	rsp, err := ingestor.restyCli.R().

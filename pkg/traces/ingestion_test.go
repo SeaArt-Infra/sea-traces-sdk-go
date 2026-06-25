@@ -211,6 +211,20 @@ func TestIngestor_Send(t *testing.T) {
 			serverResponse: func(w http.ResponseWriter, r *http.Request) {
 				require.Equal(t, "POST", r.Method)
 				require.Equal(t, "/ingestion", r.URL.Path)
+
+				var body map[string]any
+				require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+				require.NotContains(t, body, "project_id")
+				require.NotContains(t, body, "metadata")
+				batch, ok := body["batch"].([]any)
+				require.True(t, ok)
+				require.Len(t, batch, 1)
+				event, ok := batch[0].(map[string]any)
+				require.True(t, ok)
+				eventBody, ok := event["body"].(map[string]any)
+				require.True(t, ok)
+				require.NotContains(t, eventBody, "ingestionSource")
+
 				w.WriteHeader(http.StatusOK)
 				w.Write([]byte(`{"success": true}`))
 			},
@@ -278,6 +292,7 @@ func TestIngestor_SendNoAuthWithProjectID(t *testing.T) {
 
 	client := resty.New().SetBaseURL(server.URL)
 	ingestor := NewIngestorWithProjectID(client, "project-123")
+	now := time.Now()
 
 	err := ingestor.Send(context.Background(), []*Trace{
 		{
@@ -286,9 +301,43 @@ func TestIngestor_SendNoAuthWithProjectID(t *testing.T) {
 				Name:      "test-trace",
 				Timestamp: time.Now(),
 			},
+			observations: []*Observation{
+				{
+					ID:                  "span-1",
+					TraceID:             "trace-1",
+					Type:                ObservationTypeSpan,
+					Name:                "test-span",
+					StartTime:           now,
+					ParentObservationID: "trace-1",
+				},
+			},
 		},
 	})
 	require.NoError(t, err)
 	require.Equal(t, "project-123", requestBody["project_id"])
-	require.NotEmpty(t, requestBody["batch"])
+	metadata, ok := requestBody["metadata"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "noauth", metadata["ingestion_source"])
+
+	batch, ok := requestBody["batch"].([]any)
+	require.True(t, ok)
+	require.Len(t, batch, 2)
+	traceEvent, ok := batch[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, IngestionCreateTrace, traceEvent["type"])
+
+	eventBody, ok := traceEvent["body"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "trace-1", eventBody["id"])
+	require.Equal(t, "test-trace", eventBody["name"])
+	require.Equal(t, "noauth", eventBody["ingestionSource"])
+
+	spanEvent, ok := batch[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, IngestionCreateSpan, spanEvent["type"])
+	spanBody, ok := spanEvent["body"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "span-1", spanBody["id"])
+	require.Equal(t, "test-span", spanBody["name"])
+	require.Equal(t, "noauth", spanBody["ingestionSource"])
 }
