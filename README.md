@@ -196,3 +196,20 @@ go test ./...
 ## 许可证
 
 [MIT](LICENSE)
+
+## Unified gateway API
+
+Use `APIClient` with a gateway URL and bearer token. Every request sends
+`Authorization: Bearer <token>`.
+
+```go
+api, err := seatraces.NewAPIClient("https://gateway.example.com", "token")
+if err != nil { log.Fatal(err) }
+projects, err := api.ListProjects(ctx)
+project, err := api.CreateProject(ctx, seatraces.CreateProjectRequest{Name: "checkout"})
+_, err = api.UpdateProject(ctx, project.ID, seatraces.UpdateProjectRequest{Name: "checkout-v2"})
+traces, err := api.ListTraces(ctx, project.ID, seatraces.TraceQuery{TraceID: "trace-id"})
+_, err = api.Ingest(ctx, project.ID, []traces.IngestionEvent{event})
+```
+
+The client uses the internal project, trace, and ingestion API paths.
